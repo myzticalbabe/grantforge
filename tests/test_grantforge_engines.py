@@ -552,11 +552,18 @@ def test_compliance_ineligible_proposal_is_no_go():
 
 # ── collaboration ────────────────────────────────────────────────────────────
 
-def test_collaboration_edit_produces_an_operation():
+def test_collaboration_edit_changes_the_section_and_bumps_its_version():
+    """An operation that says version 2 must be a section that is at version 2."""
+    proposal = make_proposal()
+    before = proposal.sections["specific_aims"].version
     out = run(CollaborationEngine().run(CollaborationInput(
-        proposal=make_proposal(), action="edit", section_id="specific_aims",
+        proposal=proposal, action="edit", section_id="specific_aims",
         user_id="prof_okonkwo", content="revised sentence", position=42,
     )))
+    section = out.proposal.sections["specific_aims"]
+    assert section.content == "revised sentence"
+    assert section.version == before + 1
+    assert section.last_edited_by == "prof_okonkwo"
     assert out.operation == {
         "type": "insert",
         "section_id": "specific_aims",
@@ -564,28 +571,64 @@ def test_collaboration_edit_produces_an_operation():
         "text": "revised sentence",
         "user_id": "prof_okonkwo",
         "timestamp": out.operation["timestamp"],
-        "version": 1,
+        "version": before + 1,
+        # No transform is implemented, and the operation says so instead of
+        # letting a caller assume conflict-free co-editing.
+        "transformed": False,
     }
 
 
-def test_collaboration_comment_assign_move():
+def test_collaboration_edit_of_a_missing_section_fails():
+    out = run(CollaborationEngine().run(CollaborationInput(
+        proposal=make_proposal(), action="edit", section_id="no_such_section",
+        user_id="prof_okonkwo", content="text",
+    )))
+    assert out.success is False
+    assert "no_such_section" in out.error
+
+
+def test_collaboration_comment_is_stored_and_assign_move_land():
+    """success=True used to be the whole effect: nothing was stored or assigned."""
     engine = CollaborationEngine()
     comment = run(engine.run(CollaborationInput(
         proposal=make_proposal(), action="comment", section_id="specific_aims",
-        user_id="reviewer_1", content="tighten this aim",
+        user_id="reviewer_1", content="tighten this aim", position=12,
     )))
     assert comment.success is True and len(comment.comment_id) == 12
+    stored = engine._comments[comment.comment_id]
+    assert stored["section_id"] == "specific_aims"
+    assert stored["text"] == "tighten this aim"
+    assert stored["position"] == 12
 
+    proposal = make_proposal()
     assigned = run(engine.run(CollaborationInput(
-        proposal=make_proposal(), action="assign", user_id="lead", target_user="writer_2",
+        proposal=proposal, action="assign", user_id="lead", target_user="writer_2",
         section_id="research_strategy",
     )))
     assert assigned.success is True
+    assert [i.id for i in assigned.proposal.checklist if i.assignee == "writer_2"] == ["cl_1"]
 
+    moving = make_proposal()
     moved = run(engine.run(CollaborationInput(
-        proposal=make_proposal(), action="move", user_id="lead", section_id="cl_1",
+        proposal=moving, action="move", user_id="lead", section_id="cl_budget",
     )))
     assert moved.success is True
+    assert moved.operation["status"] == "in_progress"
+    assert next(i for i in moved.proposal.checklist if i.id == "cl_budget").status == "in_progress"
+
+
+def test_collaboration_assign_and_move_of_unknown_targets_fail():
+    engine = CollaborationEngine()
+    assigned = run(engine.run(CollaborationInput(
+        proposal=make_proposal(), action="assign", user_id="lead", target_user="writer_2",
+        section_id="no_such_section",
+    )))
+    assert assigned.success is False and "no_such_section" in assigned.error
+
+    moved = run(engine.run(CollaborationInput(
+        proposal=make_proposal(), action="move", user_id="lead", section_id="cl_nope",
+    )))
+    assert moved.success is False and "cl_nope" in moved.error
 
 
 def test_collaboration_request_is_remembered():
