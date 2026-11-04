@@ -276,27 +276,42 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
         )
 
     async def _build_profile(self, input: DiscoveryInput) -> DiscoveryOutput:
-        """Auto-generate profile from publications + DirectMemory."""
+        """Return the caller's profile, or an explicitly empty shell.
+
+        Nothing is read from publications or DirectMemory — there is no lookup
+        behind this method. The shell used to assert ``career_stage="early"``
+        and ``esi_eligible=True``, so an eligibility run reported "eligible" for
+        an investigator nobody had described. Unknown fields are now marked
+        unknown and named in the metadata.
+        """
         profile = input.profile
+        unestablished: list[str] = []
         if profile is None:
             profile = Profile(
                 id=f"auto_{hash(input.query or '') % 10000:04d}",
                 name="Auto-generated Profile",
                 institution="Unknown Institution",
-                career_stage="early",
-                esi_eligible=True,
+                career_stage="unknown",
+                esi_eligible=False,
                 research_areas=[],
             )
+            unestablished = ["name", "institution", "career_stage", "esi_eligible"]
 
-        # Extract research areas from query if provided
-        if input.query:
+        # Fill research areas from the query only when the profile has none: a
+        # supplied profile's areas were being overwritten by the query's words.
+        if input.query and not profile.research_areas:
             keywords = [w for w in input.query.split() if len(w) > 3]
             profile.research_areas = keywords[:5]
 
         return DiscoveryOutput(
             success=True,
             profile=profile,
-            metadata={"mode": "profile_build", "areas": profile.research_areas}
+            metadata={
+                "mode": "profile_build",
+                "areas": profile.research_areas,
+                "lookup": "none_no_publication_or_memory_source",
+                **({"unestablished": unestablished} if unestablished else {}),
+            },
         )
 
     async def health_check(self) -> dict[str, Any]:
