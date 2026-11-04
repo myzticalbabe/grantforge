@@ -72,34 +72,55 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
         else:
             return DiscoveryOutput(success=False, error="No valid input provided")
 
+    # Funder identities and the domains they fund -- NOT an opportunity database.
+    # A match says "this funder's stated domain overlaps your query"; it never says
+    # "this funder has a call open". The previous version returned the first top_k
+    # of this list for every query, so "crop rotation" and "cardiac sensing" both
+    # produced nih/nsf/doe and the extracted keywords were never used.
+    FUNDER_CATALOGUE: tuple[dict, ...] = (
+        {"id": "nih", "name": "National Institutes of Health", "type": FunderType.FEDERAL,
+         "keywords": ("health", "biomedical", "clinical", "disease", "cardiac",
+                      "heart", "neuroscience", "physiology")},
+        {"id": "nsf", "name": "National Science Foundation", "type": FunderType.FEDERAL,
+         "keywords": ("science", "engineering", "physics", "chemistry", "materials",
+                      "computing", "mathematics", "education", "sensor", "sensing")},
+        {"id": "doe", "name": "Department of Energy", "type": FunderType.FEDERAL,
+         "keywords": ("energy", "power", "battery", "grid", "nuclear", "fusion",
+                      "climate", "efficiency")},
+        {"id": "dod", "name": "Department of Defense", "type": FunderType.FEDERAL,
+         "keywords": ("defense", "security", "aerospace", "autonomy", "radar",
+                      "robotics")},
+        {"id": "usda", "name": "US Department of Agriculture", "type": FunderType.FEDERAL,
+         "keywords": ("agriculture", "food", "nutrition", "crop", "soil", "forestry",
+                      "rural")},
+    )
+
     async def _search_opportunities(self, input: DiscoveryInput) -> DiscoveryOutput:
-        """Semantic search: embed query → hybrid BM25+vector → rerank."""
-        # Basic implementation: return structured search metadata
-        # Full semantic search requires ov_embed_server (NPU)
+        """Keyword match over a funder-identity catalogue, ranked by hits."""
+        # Full semantic search requires ov_embed_server (NPU); until that exists
+        # this is an honest keyword match over what the engine actually holds.
         query = input.query or ""
         top_k = input.top_k
 
-        # Extract keywords for BM25-style matching
-        keywords = [w.lower() for w in query.split() if len(w) > 2]
+        keywords = [w.strip(".,;:!?()\"'").lower() for w in query.split()]
+        keywords = [w for w in keywords if len(w) > 2]
 
-        # Build a basic opportunity list from keyword matching
-        opportunities = []
+        scored = []
+        for funder in self.FUNDER_CATALOGUE:
+            haystack = {funder["id"], *(w.lower() for w in funder["name"].split()),
+                        *funder["keywords"]}
+            hits = sorted({k for k in keywords if k in haystack})
+            if hits:
+                scored.append((len(hits), funder, hits))
+        # Deterministic order: most hits first, then id, so the same query always
+        # produces the same list.
+        scored.sort(key=lambda row: (-row[0], row[1]["id"]))
+        chosen = scored[:top_k]
 
-        # Common federal funders for grant discovery
-        known_funders = [
-            {"id": "nih", "name": "National Institutes of Health", "type": FunderType.FEDERAL},
-            {"id": "nsf", "name": "National Science Foundation", "type": FunderType.FEDERAL},
-            {"id": "doe", "name": "Department of Energy", "type": FunderType.FEDERAL},
-            {"id": "dod", "name": "Department of Defense", "type": FunderType.FEDERAL},
-            {"id": "usda", "name": "US Department of Agriculture", "type": FunderType.FEDERAL},
+        opportunities = [
+            Funder(id=funder["id"], name=funder["name"], type=funder["type"])
+            for _, funder, _ in chosen
         ]
-
-        for funder in known_funders[:top_k]:
-            opportunities.append(Funder(
-                id=funder["id"],
-                name=funder["name"],
-                type=funder["type"],
-            ))
 
         return DiscoveryOutput(
             success=True,
@@ -109,8 +130,13 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
                 "mode": "keyword_search",
                 "keywords": keywords,
                 "top_k": top_k,
-                "note": "Full semantic search requires ov_embed_server on NPU",
-            }
+                "corpus_size": len(self.FUNDER_CATALOGUE),
+                "matched": {funder["id"]: hits for _, funder, hits in chosen},
+                "note": ("Keyword match against a builtin funder-identity catalogue. "
+                         "No opportunity (call) data is indexed, so a result means the "
+                         "funder's stated domain overlaps the query -- not that a call "
+                         "is open. Semantic search requires ov_embed_server on NPU."),
+            },
         )
 
     async def _ingest_rfp(self, input: DiscoveryInput) -> DiscoveryOutput:
