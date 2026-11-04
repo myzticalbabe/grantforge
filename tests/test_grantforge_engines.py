@@ -580,6 +580,35 @@ def _assert_excel_package(payload: bytes) -> None:
     assert "Personnel" in text and "Indirect Costs" in text
 
 
+def test_export_budget_does_not_report_zero_dollars_as_an_amount():
+    """An unfilled budget is blank, and says so, instead of claiming $0.
+
+    Runs on both interpreters: with openpyxl the cells are read back, without it
+    the SpreadsheetML the fallback writes is inspected.
+    """
+    rfp = make_rfp(max_amount=450000.0)
+    out = run(ExportEngine().run(ExportInput(
+        proposal=make_proposal(), pi_profile=make_profile(), rfp=rfp,
+    )))
+    workbook = out.files["prop_cardiac_01_budget.xlsx"]
+
+    try:
+        from openpyxl import load_workbook
+    except ImportError:
+        sheet = _zip_text(workbook)
+        assert "<v>0</v>" not in sheet
+        assert 'r="B7"' in sheet
+        assert '<c r="B7"/>' in sheet or '<c r="B7" />' in sheet
+        return
+
+    ws = load_workbook(BytesIO(workbook))["Budget"]
+    assert ws["B7"].value is None
+    assert ws["B12"].value is None
+    texts = [str(c.value) for row in ws.iter_rows() for c in row if isinstance(c.value, str)]
+    assert any("does not generate budget figures" in t for t in texts)
+    assert any("Award ceiling stated in the RFP: $450,000" in t for t in texts)
+
+
 def test_export_writes_three_real_files():
     rfp, profile, proposal = make_rfp(), make_profile(), make_proposal()
     title = proposal.title
