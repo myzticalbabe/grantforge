@@ -242,21 +242,21 @@ class ExportEngine(Engine[ExportInput, ExportOutput]):
             ws.cell(row=row, column=2, value="Amount").font = Font(bold=True)
             row += 1
 
-            categories = [
-                ("Personnel", 0),
-                ("Equipment", 0),
-                ("Travel", 0),
-                ("Supplies", 0),
-                ("Other", 0),
-                ("Indirect Costs", 0),
-            ]
-            for cat, amount in categories:
+            # Amounts are deliberately blank: nothing in this pipeline computes
+            # budget figures, and a hardcoded 0 in every row was a $0 budget
+            # claim rather than an unfilled template.
+            categories = ["Personnel", "Equipment", "Travel", "Supplies", "Other", "Indirect Costs"]
+            first_amount_row = row
+            for cat in categories:
                 ws.cell(row=row, column=1, value=cat)
-                ws.cell(row=row, column=2, value=amount)
                 row += 1
 
             ws.cell(row=row, column=1, value="Total").font = Font(bold=True)
-            ws.cell(row=row, column=2, value=f"=SUM(B7:B{row-1})").font = Font(bold=True)
+            ws.cell(row=row, column=2, value=f"=SUM(B{first_amount_row}:B{row-1})").font = Font(bold=True)
+            row += 2
+
+            ws.cell(row=row, column=1, value=self._budget_note(input))
+            ws.cell(row=row + 1, column=1, value=self._ceiling_note(input))
 
             buffer = BytesIO()
             wb.save(buffer)
@@ -277,8 +277,12 @@ class ExportEngine(Engine[ExportInput, ExportOutput]):
                 [],
                 ["Category", "Amount"],
             ]
-            rows.extend([[cat, 0] for cat in categories])
-            rows.append(["Total", sum(0 for _ in categories)])
+            # Blank, not 0: an unfilled row must not read as a $0 allocation.
+            rows.extend([[cat] for cat in categories])
+            rows.append(["Total"])
+            rows.append([])
+            rows.append([self._budget_note(input)])
+            rows.append([self._ceiling_note(input)])
 
             def _cell(col: str, row_num: int, value: Any) -> str:
                 ref = f"{col}{row_num}"
@@ -325,6 +329,18 @@ class ExportEngine(Engine[ExportInput, ExportOutput]):
                             '</Relationships>')
                 zf.writestr("xl/worksheets/sheet1.xml", sheet)
             return buffer.getvalue()
+
+    def _budget_note(self, input: Any) -> str:
+        return (
+            "Amounts are entered from the budget justification; grantforge does "
+            "not generate budget figures."
+        )
+
+    def _ceiling_note(self, input: Any) -> str:
+        ceiling = getattr(input.rfp, "max_amount", None)
+        if ceiling:
+            return f"Award ceiling stated in the RFP: ${ceiling:,.0f}"
+        return "Award ceiling not stated in the RFP"
 
     def _get_template(self, funder: str) -> dict[str, Any]:
         return self.TEMPLATES.get(funder.lower(), self.TEMPLATES["foundation"])
