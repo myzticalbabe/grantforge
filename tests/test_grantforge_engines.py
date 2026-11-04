@@ -40,6 +40,7 @@ from grantforge.collaboration import CollaborationEngine, CollaborationInput  # 
 from grantforge.compliance import ComplianceEngine, ComplianceInput  # noqa: E402
 from grantforge.discovery import DiscoveryEngine, DiscoveryInput  # noqa: E402
 from grantforge.drafting import DraftingEngine, DraftingInput  # noqa: E402
+from grantforge.drafting.sections import SectionComposer  # noqa: E402
 from grantforge.eligibility import EligibilityEngine, EligibilityInput  # noqa: E402
 from grantforge.engine import Engine, EngineInput, EngineOutput  # noqa: E402
 from grantforge import config as config_module  # noqa: E402
@@ -445,6 +446,23 @@ def test_drafting_creates_proposal_and_checklist():
     assert {c.id for c in out.checklist} >= {"cl_budget", "cl_biosketches", "cl_letters"}
     assert out.proposal.checklist == out.checklist
 
+    # The proposal used to carry an empty ``sections`` map, so the review had
+    # nothing to read. Each required section is now composed from the RFP and
+    # the profile, and each says which kind of text it is.
+    assert set(out.proposal.sections) >= {
+        "specific_aims", "research_strategy", "budget_justification",
+        "biosketches", "letters",
+    }
+    for section in out.proposal.sections.values():
+        assert section.content.startswith("DRAFT")
+        assert "Still to supply" in section.content
+        assert section.word_count == len(section.content.split())
+        assert section.word_count >= 50, section.id
+    assert out.metadata["draft_kind"] == "scaffold"
+    # The standard Budget item would have duplicated the required
+    # Budget Justification section; it is not composed a second time.
+    assert "budget" not in out.proposal.sections
+
 
 def test_drafting_writes_a_section_using_the_profile():
     out = run(DraftingEngine().run(DraftingInput(
@@ -477,17 +495,40 @@ def test_drafting_does_not_invent_an_acronym_problem():
     assert any("RFP" in s for s in out.suggestions)
 
 
-def test_drafting_draft_is_labelled_as_a_template():
-    """The generated body must not pass itself off as proposal text: it used to
-    assert the work "aligns with the funder's priorities" and "demonstrates clear
+def test_drafting_draft_is_labelled_and_never_asserts_about_the_research():
+    """The body must not pass itself off as proposal text: it used to assert the
+    work "aligns with the funder's priorities" and "demonstrates clear
     significance and innovation" -- claims nothing in this engine assessed."""
     out = run(DraftingEngine().run(DraftingInput(
         rfp=make_rfp(), profile=make_profile(), proposal=make_proposal(),
         section_id="specific_aims", instruction="draft",
     )))
-    assert out.section.content.startswith("TEMPLATE:")
-    assert "grantforge has not assessed" in out.section.content
-    assert "aligns with the funder's priorities" not in out.section.content
+    content = out.section.content
+    assert content.startswith("DRAFT")
+    assert "own wording is not in it" in content
+    assert "Still to supply" in content
+    assert "aligns with the funder's priorities" not in content
+    assert "significance and innovation" not in content
+    # The facts it does hold are the caller's, not invented.
+    assert "Dr. Ada Okonkwo" in content
+    assert "Rensselaer Polytechnic Institute" in content
+
+
+def test_section_composer_quotes_the_rfp_and_renders_the_mechanism():
+    body = SectionComposer().compose("budget_justification", make_rfp(), make_profile())
+    assert '"Award ceiling $450,000 over three years."' in body
+    assert "Mechanism named by the RFP: R01" in body
+    assert "GrantMechanism" not in body  # an enum stringified into the draft
+    assert "line-item costs" in body
+
+
+def test_section_composer_names_what_the_profile_does_not_hold():
+    body = SectionComposer().compose(
+        "research_strategy", make_rfp(), make_profile(research_areas=[]),
+    )
+    assert "[ ] the research areas this section describes" in body
+    assert "Research areas on record" not in body
+    assert "Proposals are limited to a 12 page research strategy." in body
 
 
 def test_drafting_revise_and_expand_refuse_instead_of_returning_a_marker():
@@ -544,6 +585,19 @@ def test_compliance_fails_without_eligibility_assessment():
     assert [e["check_type"] for e in out.audit_entries] == [
         "eligibility", "budget", "format", "ethics", "coi",
     ]
+
+
+def test_compliance_fails_an_empty_proposal_instead_of_passing_an_empty_loop():
+    """The format check's loop had nothing to iterate, so an undrafted proposal
+    reported pass -- a review GO over a document with no text in it."""
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE),
+                               sections={}),
+        pi_profile=make_profile(),
+    )))
+    assert out.checks["format"]["pass"] is False
+    assert "nothing was drafted" in out.checks["format"]["details"]
+    assert out.overall_pass is False
 
 
 def test_compliance_passes_with_eligibility_attached():
@@ -1010,32 +1064,32 @@ def test_run_executes_when_validation_passes():
 
 # ── full pipeline ────────────────────────────────────────────────────────────
 
-def test_pipeline_runs_all_five_phases_and_flags_the_undrafted_proposal():
-    """All five phases run; the review says what the drafting phase did not do.
+def test_pipeline_drafts_every_section_and_labels_the_run_a_scaffold():
+    """All five phases run on a document that now has text in it.
 
-    Drafting produces a checklist and no sections. The format check used to pass
-    that proposal because its loop had nothing to iterate, so the run exported a
-    submission bundle with success=True. It now reports the empty proposal, and
-    the run is not a success -- the phases still all run and their results come
-    back.
+    Drafting used to produce a checklist and no sections, so the review had
+    nothing to read and the run was not a success. With sections composed the
+    review passes -- and the run says ``draft_kind: scaffold`` so success is not
+    read as "submission ready": the text is a scaffold, not the applicant's prose.
     """
     result = run(GrantPipeline().run_full_pipeline(rfp_text=RFP_TEXT, profile=make_profile()))
-    assert result["success"] is False
-    assert "compliance review failed: format" in result["error"]
+    assert result["success"] is True, result.get("error")
+    assert result["draft_kind"] == "scaffold"
     assert set(result["results"]) == {"discovery", "eligibility", "drafting", "compliance", "export"}
 
     proposal = result["proposal"]
     assert proposal.rfp_id
-    assert proposal.sections == {}
-    assert proposal.checklist, "the checklist is what the drafting phase produced"
+    assert proposal.checklist, "the checklist is still produced"
     assert proposal.eligibility.overall == EligibilityVerdict.ELIGIBLE
+    assert set(proposal.sections) >= {"specific_aims", "research_strategy", "budget_justification"}
+    for section in proposal.sections.values():
+        assert section.content.strip()
+        assert section.content.startswith("DRAFT")
+        assert section.word_count >= 50, section.id
 
     checks = result["results"]["compliance"].checks
-    assert checks["format"]["pass"] is False
-    assert "nothing was drafted" in checks["format"]["details"]
-    assert result["results"]["compliance"].overall_pass is False
-
-    # The export still ran: the work exists, it is just not a submission.
+    assert checks["format"]["pass"] is True
+    assert result["results"]["compliance"].overall_pass is True
     assert len(result["results"]["export"].files) == 3
 
 

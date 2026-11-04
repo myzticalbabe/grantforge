@@ -6,6 +6,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from grantforge.drafting.sections import SectionComposer, section_key
 from grantforge.engine import Engine, EngineInput, EngineOutput
 from grantforge.schemas import (
     Profile,
@@ -37,7 +38,9 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
     name = "drafting"
     version = "2.0.0"
 
-    # Style guide rules (enforced on every generation)
+    # Advisory: the composer cannot obey a word limit it does not measure, and
+    # nothing applies these rules to generated text. They are guidance for the
+    # applicant, not a gate -- the header used to claim enforcement.
     STYLE_RULES = [
         "Use active voice",
         "Avoid jargon; define technical terms",
@@ -50,6 +53,7 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
     def __init__(self):
         super().__init__()
         self._content_library: dict[str, str] = {}  # key → content
+        self._composer = SectionComposer()
 
     async def execute(self, input: DraftingInput) -> DraftingOutput:
         if input.proposal is None:
@@ -61,20 +65,58 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
         return await self._generate_checklist(input)
 
     async def _create_proposal(self, input: DraftingInput) -> DraftingOutput:
-        """Create new proposal from RFP + profile."""
+        """Create new proposal from RFP + profile, composing every section.
+
+        This used to return a checklist and an empty ``sections`` map, so the
+        compliance review had nothing to read and the run exported a bundle with
+        no text in it. Each checklist item now gets a composed scaffold, and the
+        output says which kind of draft it is rather than implying finished prose.
+        """
         checklist = await self._rfp_to_checklist(input.rfp)
-        
+        sections: dict[str, SectionDraft] = {}
+        composed: list[str] = []
+        # The standard Budget item would duplicate a required Budget section.
+        budget_covered = any(
+            "budget" in item.section.lower()
+            for item in checklist
+            if item.id.startswith("cl_") and item.id[3:].isdigit()
+        )
+        for item in checklist:
+            if item.id == "cl_budget" and budget_covered:
+                continue
+            key = section_key(item.section)
+            if key in sections:  # two labels normalise to the same key
+                continue
+            library_hits = await self.search_library(key)
+            content = self._composer.compose(
+                key, input.rfp, input.profile,
+                requirement=item.requirement,
+                library_note=library_hits[0][1] if library_hits else None,
+            )
+            sections[key] = SectionDraft(
+                id=key,
+                title=item.section,
+                content=content,
+                word_count=len(content.split()),
+            )
+            composed.append(key)
+
         proposal = Proposal(
             rfp_id=input.rfp.id,
             title=input.rfp.title,
             pi_profile_id=input.profile.id,
             checklist=checklist,
-            sections={},
+            sections=sections,
         )
         return DraftingOutput(
             success=True,
             proposal=proposal,
             checklist=checklist,
+            metadata={
+                "drafted_sections": composed,
+                "composer": "deterministic_scaffold_no_model",
+                "draft_kind": "scaffold",
+            },
         )
 
     async def _rfp_to_checklist(self, rfp: RFP) -> list[ChecklistItem]:
@@ -166,22 +208,15 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
 
     def _draft_content(self, section_id: str, rfp: RFP, profile: Profile,
                        library_hits: list) -> str:
-        """Generate initial draft content for a section."""
-        parts = []
-        parts.append("TEMPLATE: scaffolding generated from the RFP and profile, "
-                     "not proposal text — replace it with the applicant's own wording.")
-        parts.append(f"This section addresses the {section_id} requirements "
-                     f"specified in the RFP ({rfp.title}).")
-        if profile:
-            parts.append(f"The PI, {profile.name} from {profile.institution}, "
-                         f"brings expertise in {', '.join(profile.research_areas[:3]) or 'the proposed research area'}.")
-        if library_hits:
-            parts.append(f"Relevant content from library: {library_hits[0][1][:200]}")
-        # No claim of alignment, significance or innovation: nothing here assessed
-        # them, so the draft asks for them instead of asserting them.
-        parts.append("State explicitly why the work matters and what is new about "
-                     "it; grantforge has not assessed either.")
-        return " ".join(parts)
+        """Compose the section from the RFP and the profile.
+
+        No sentence here claims significance, alignment or innovation: nothing in
+        this engine assessed them, so the scaffold asks for them instead.
+        """
+        return self._composer.compose(
+            section_key(section_id), rfp, profile,
+            library_note=library_hits[0][1][:200] if library_hits else None,
+        )
 
     @staticmethod
     def _condense_content(text: str) -> str:
