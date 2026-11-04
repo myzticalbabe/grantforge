@@ -136,7 +136,11 @@ class ExportEngine(Engine[ExportInput, ExportOutput]):
                 "funder": input.rfp.funder_id,
                 "deadline": input.rfp.deadline.isoformat() if input.rfp.deadline else None,
                 "generated_at": datetime.utcnow().isoformat(),
-                "page_counts": {},  # TODO: compute
+                # No page counts: nothing here renders and reads back a page count,
+                # and an empty page_counts dict read as "zero pages" to a caller
+                # checking a page limit. The key is absent rather than hollow.
+                "formats": [fmt.value for fmt in input.formats],
+                "files": sorted(files),
             },
         )
 
