@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -95,14 +96,85 @@ class ComplianceEngine(Engine[ComplianceInput, ComplianceOutput]):
             return {"pass": True, "details": "Formatting checks passed", "verdict": "GO"}
 
         if check_type == "ethics":
-            # Basic ethics check - ensure no PII in proposal
-            return {"pass": True, "details": "Ethics review passed (automated)", "verdict": "GO"}
+            return self._check_identifiable_data(proposal)
 
         if check_type == "coi":
-            # Check for conflict of interest declarations
-            return {"pass": True, "details": "COI check passed", "verdict": "GO"}
+            return self._check_conflict_disclosure(proposal)
 
-        return {"pass": True, "details": f"{check_type} check completed", "verdict": "GO"}
+        # An unknown check cannot report a pass: previously it did, with the
+        # detail "check completed", which was a GO from a box nobody opened.
+        return {
+            "pass": False,
+            "details": f"Unknown check type '{check_type}' — nothing was performed",
+            "verdict": "CLARIFY",
+        }
+
+    # Identifiable-data patterns. The detail names the KIND of match, never the
+    # matched value: a compliance report that echoes an SSN into a log has spread
+    # the data it was checking for.
+    _PII_PATTERNS = (
+        ("email address", re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")),
+        ("US social security number", re.compile(r"\b\d{3}-\d{2}-\d{4}\b")),
+        ("phone number", re.compile(r"\b\(?\d{3}\)?[ .-]\d{3}[ .-]\d{4}\b")),
+    )
+
+    _CONFLICT_STATEMENTS = (
+        "no conflicts",
+        "no conflict of interest",
+        "no competing interest",
+        "nothing to disclose",
+    )
+
+    def _proposal_text(self, proposal: Proposal) -> str:
+        parts = [
+            section.content
+            for section in proposal.sections.values()
+            if getattr(section, "content", None)
+        ]
+        return "\n".join(parts)
+
+    def _check_identifiable_data(self, proposal: Proposal) -> dict[str, Any]:
+        """Scan the draft for identifiable data instead of asserting a review."""
+        text = self._proposal_text(proposal)
+        findings = [
+            kind for kind, pattern in self._PII_PATTERNS if pattern.search(text)
+        ]
+        if not findings:
+            return {
+                "pass": True,
+                "details": f"No identifiable data found in {len(text)} characters of draft text",
+                "verdict": "GO",
+            }
+        return {
+            "pass": False,
+            "details": (
+                "Draft text contains " + ", ".join(sorted(set(findings)))
+                + " — remove, or confirm the funder expects it"
+            ),
+            "verdict": "CLARIFY",
+        }
+
+    def _check_conflict_disclosure(self, proposal: Proposal) -> dict[str, Any]:
+        """Look for the COI statement; absence is normal at draft stage."""
+        text = self._proposal_text(proposal).lower()
+        has_section = any("conflict" in s.title.lower() or "coi" in s.title.lower()
+                          for s in proposal.sections.values())
+        if not has_section and "conflict of interest" not in text:
+            return {
+                "pass": True,
+                "details": "No conflict-of-interest statement yet (optional at draft stage)",
+                "verdict": "GO",
+            }
+        if any(phrase in text for phrase in self._CONFLICT_STATEMENTS):
+            return {"pass": True, "details": "COI statement declares no conflicts", "verdict": "GO"}
+        return {
+            "pass": False,
+            "details": (
+                "COI statement present but does not declare a position — reads as a "
+                "disclosure that needs human review"
+            ),
+            "verdict": "CLARIFY",
+        }
 
     async def _record_audit(self, check_type: str, result: dict, input: ComplianceInput) -> dict[str, Any]:
         """Record one compliance decision, and only claim it when it landed.

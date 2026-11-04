@@ -373,6 +373,75 @@ def test_compliance_flags_a_too_short_section():
     assert "too short" in out.checks["format"]["details"]
 
 
+def _with_section_text(proposal, text):
+    """Replace a section's text so a check has something real to read."""
+    section = next(iter(proposal.sections.values()))
+    section.content = text
+    return proposal
+
+
+def test_compliance_ethics_flags_identifiable_data_without_echoing_it():
+    proposal = make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE))
+    _with_section_text(proposal, "Send data to ada@example.edu or call 555-201-8899.")
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=proposal, pi_profile=make_profile(), check_types=["ethics"],
+    )))
+    ethics = out.checks["ethics"]
+    assert ethics["pass"] is False
+    assert ethics["verdict"] == "CLARIFY"
+    assert "email address" in ethics["details"]
+    assert "phone number" in ethics["details"]
+    # The report must not spread the data it was checking for.
+    assert "ada@example.edu" not in ethics["details"]
+    assert "555-201-8899" not in ethics["details"]
+
+
+def test_compliance_ethics_passes_a_clean_draft_and_says_what_it_scanned():
+    """Negative control for the ethics check."""
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE)),
+        pi_profile=make_profile(), check_types=["ethics"],
+    )))
+    ethics = out.checks["ethics"]
+    assert ethics["pass"] is True
+    assert "characters of draft text" in ethics["details"]
+
+
+def test_compliance_coi_reports_absence_instead_of_claiming_a_review():
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE)),
+        pi_profile=make_profile(), check_types=["coi"],
+    )))
+    coi = out.checks["coi"]
+    assert coi["pass"] is True
+    assert "No conflict-of-interest statement yet" in coi["details"]
+
+
+def test_compliance_coi_flags_a_disclosure_that_declares_nothing():
+    proposal = make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE))
+    _with_section_text(
+        proposal,
+        "Conflict of interest: the PI holds equity in a company that sells related sensors.",
+    )
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=proposal, pi_profile=make_profile(), check_types=["coi"],
+    )))
+    coi = out.checks["coi"]
+    assert coi["pass"] is False
+    assert coi["verdict"] == "CLARIFY"
+    assert "human review" in coi["details"]
+
+
+def test_compliance_unknown_check_type_does_not_report_a_pass():
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(), pi_profile=make_profile(), check_types=["vibes"],
+    )))
+    assert out.checks["vibes"]["pass"] is False
+    assert out.checks["vibes"]["verdict"] == "CLARIFY"
+    assert "Unknown check type" in out.checks["vibes"]["details"]
+    assert out.overall_pass is False
+
+
 def test_compliance_audit_entry_does_not_claim_a_record_it_did_not_write(monkeypatch):
     """No sink configured: the entry must say so, not `dlv_recorded: True`."""
     monkeypatch.delenv("GRANTFORGE_AUDIT_DIR", raising=False)
