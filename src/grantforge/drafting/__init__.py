@@ -3,6 +3,7 @@ Drafting Engine — Checklist-driven section drafting + Content library + Style 
 """
 
 from __future__ import annotations
+import re
 from typing import Any
 
 from grantforge.engine import Engine, EngineInput, EngineOutput
@@ -103,27 +104,114 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
         )
 
     async def _modify_section(self, input: DraftingInput) -> DraftingOutput:
-        """Draft, revise, expand, or condense a section with style enforcement."""
-        # TODO: Retrieve section from proposal
-        # TODO: Apply style rules via LLM
-        # TODO: Pull relevant content from library
-        # TODO: Return SectionDraft with version increment
-        
+        """Draft a template, or condense existing text. Revise and expand need a model.
+
+        revise/expand used to return a bracketed marker ("[Revised content for
+        specific_aims ...]") with success=True, so a placeholder could be exported
+        as the section body and word-counted as prose. There is no text generator
+        behind this engine, so those instructions now fail and say what they need;
+        condense is real (it trims the section the proposal already holds).
+        """
+        section_id = input.section_id or "new"
+        instruction = (input.instruction or "draft").lower()
+
+        existing = None
+        if input.proposal is not None:
+            existing = input.proposal.sections.get(section_id)
+
+        # Get relevant content from library
+        library_hits = await self.search_library(section_id)
+
+        if instruction == "draft":
+            content = self._draft_content(section_id, input.rfp, input.profile, library_hits)
+        elif instruction == "condense":
+            if existing is None or not existing.content.strip():
+                return DraftingOutput(
+                    success=False,
+                    error=(f"condense needs the existing text of {section_id!r}; "
+                           "the proposal has no such section"),
+                )
+            content = self._condense_content(existing.content)
+        elif instruction in {"revise", "expand"}:
+            return DraftingOutput(
+                success=False,
+                error=(f"{instruction} needs a text model: no generator is wired into "
+                       "grantforge, and returning a bracketed marker as the section "
+                       "body would be a placeholder dressed as a revision"),
+            )
+        else:
+            return DraftingOutput(
+                success=False,
+                error=f"Unknown instruction: {instruction}",
+            )
+
+        word_count = len(content.split())
+
         section = SectionDraft(
-            id=input.section_id or "new",
-            title="Section",
-            content="[Drafted content with style rules applied]",
-            word_count=150,
+            id=section_id,
+            title=existing.title if existing else section_id.replace("_", " ").title(),
+            content=content,
+            word_count=word_count,
+            version=(existing.version + 1) if existing else 1,
+            last_edited_by=input.profile.name if input.profile else None,
         )
-        
+
+        suggestions = self._generate_suggestions(section_id, content)
+
         return DraftingOutput(
             success=True,
             section=section,
-            suggestions=[
-                "Consider adding quantitative outcome metric",
-                "Define acronym on first use",
-            ],
+            suggestions=suggestions,
         )
+
+    def _draft_content(self, section_id: str, rfp: RFP, profile: Profile,
+                       library_hits: list) -> str:
+        """Generate initial draft content for a section."""
+        parts = []
+        parts.append("TEMPLATE: scaffolding generated from the RFP and profile, "
+                     "not proposal text — replace it with the applicant's own wording.")
+        parts.append(f"This section addresses the {section_id} requirements "
+                     f"specified in the RFP ({rfp.title}).")
+        if profile:
+            parts.append(f"The PI, {profile.name} from {profile.institution}, "
+                         f"brings expertise in {', '.join(profile.research_areas[:3]) or 'the proposed research area'}.")
+        if library_hits:
+            parts.append(f"Relevant content from library: {library_hits[0][1][:200]}")
+        # No claim of alignment, significance or innovation: nothing here assessed
+        # them, so the draft asks for them instead of asserting them.
+        parts.append("State explicitly why the work matters and what is new about "
+                     "it; grantforge has not assessed either.")
+        return " ".join(parts)
+
+    @staticmethod
+    def _condense_content(text: str) -> str:
+        """Deterministic trim: first sentence of each paragraph, capped at 80 words.
+
+        A real reduction of the text that was supplied, not a marker standing in
+        for one: every sentence kept comes from the caller's own section.
+        """
+        kept: list[str] = []
+        for paragraph in text.split("\n\n"):
+            stripped = paragraph.strip()
+            if not stripped:
+                continue
+            first = re.split(r"(?<=[.!?])\s+", stripped)[0].strip()
+            kept.append(first)
+        condensed = " ".join(kept)
+        words = condensed.split()
+        if len(words) > 80:
+            condensed = " ".join(words[:80]) + " …"
+        return condensed
+
+    def _generate_suggestions(self, section_id: str, content: str) -> list[str]:
+        suggestions = []
+        if "quantif" not in content.lower() and "%" not in content and "$" not in content:
+            suggestions.append("Consider adding quantitative outcome metric")
+        if len(content.split()) > 300:
+            suggestions.append("Section may exceed page limit - consider condensing")
+        if "acronym" not in content.lower():
+            suggestions.append("Define acronym on first use")
+        return suggestions
 
     async def add_to_library(self, key: str, content: str) -> None:
         """Add content to searchable library."""
