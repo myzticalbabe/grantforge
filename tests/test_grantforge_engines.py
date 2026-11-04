@@ -187,7 +187,7 @@ def test_discovery_profile_shell_does_not_assert_stage_or_esi():
         DiscoveryInput(query="edge inference for wearable sensors")
     ))
     assert out.profile.career_stage == "unknown"
-    assert out.profile.esi_eligible is False
+    assert out.profile.esi_eligible is None  # unstated, not a denial
     assert out.profile.research_areas  # the query's words are still a starting point
     assert out.metadata["lookup"] == "none_no_publication_or_memory_source"
     assert {"career_stage", "esi_eligible", "institution"} <= set(out.metadata["unestablished"])
@@ -264,6 +264,22 @@ def test_eligibility_esi_requirement_rejects_a_non_esi_pi():
     assert esi.verdict == EligibilityVerdict.NOT_ELIGIBLE
     assert "requires ESI" in esi.reason
     assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_does_not_deny_esi_a_profile_never_answered():
+    """esi_eligible defaulted to False, so "ESI-eligible required" rejected a
+    profile nobody had asked -- the negative control above and this case were
+    the same input until the field became tri-state."""
+    rfp = make_rfp(raw_text=(
+        "Applicants must be early career investigators.\n\n"
+        "Applicants must be ESI-eligible at the time of application.\n"
+    ))
+    profile = make_profile(career_stage="early", esi_eligible=None)
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=rfp, profile=profile)))
+    esi = next(c for c in out.assessment.checks if c.category.value == "esi_status")
+    assert esi.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "does not state esi_eligible" in esi.reason
+    assert out.assessment.overall != EligibilityVerdict.NOT_ELIGIBLE
 
 
 def test_eligibility_senior_pi_fails_an_early_career_rfp():

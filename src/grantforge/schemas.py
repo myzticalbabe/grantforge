@@ -107,7 +107,10 @@ class Profile(BaseModel):
     institution_type: str | None = None  # "university", "nonprofit", "hospital", ...
     country: str | None = None  # "US", "CA", "GB", ...
     career_stage: str  # "early", "mid", "senior"
-    esi_eligible: bool = False
+    # Tri-state on purpose: False means "checked, not ESI", None means nobody
+    # said. With a plain bool the default read as a denial, so an RFP requiring
+    # ESI rejected a profile that had never been asked the question.
+    esi_eligible: bool | None = None
     citizenship: list[str] = []
     prior_grants: list[str] = []  # grant numbers
     publications: list[str] = []  # DOIs

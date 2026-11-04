@@ -271,7 +271,10 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                     requirement=requirement,
                     profile_value=None,
                     verdict=EligibilityVerdict.NEED_MORE_INFO,
-                    reason=f"Profile missing {attr} information",
+                    reason=(
+                        f"Profile does not state {attr}, so {category.value} "
+                        "cannot be assessed"
+                    ),
                     confidence=0.5,
                 ))
             else:
