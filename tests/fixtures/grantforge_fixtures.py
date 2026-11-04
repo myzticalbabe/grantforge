@@ -73,6 +73,11 @@ def make_profile(**overrides) -> Profile:
         orcid="0000-0002-1825-0097",
         institution="Rensselaer Polytechnic Institute",
         department="Electrical, Computer, and Systems Engineering",
+        # The fixture RFP raises neither criterion, so these two answer only the
+        # tests that add a geography or institution-type sentence — but they are
+        # part of a complete profile, not test-only extras.
+        institution_type="university",
+        country="US",
         career_stage="early",
         esi_eligible=True,
         citizenship=["US"],

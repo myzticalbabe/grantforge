@@ -17,6 +17,94 @@ from grantforge.schemas import (
 )
 
 
+_COUNTRY_ALIASES = {
+    "us": "us",
+    "usa": "us",
+    "u s": "us",
+    "u s a": "us",
+    "united states": "us",
+    "united states of america": "us",
+    "canada": "canada",
+    "ca": "canada",
+    "uk": "uk",
+    "gb": "uk",
+    "united kingdom": "uk",
+    "australia": "australia",
+    "au": "australia",
+}
+
+_INSTITUTION_CLASSES = {
+    "academic": ("university", "universities", "academic", "college", "colleges", "higher education"),
+    "nonprofit": ("nonprofit", "non profit", "charitable", "501 c 3", "501c3"),
+    "hospital": ("hospital", "health system"),
+    "industry": ("small business", "for profit", "industry", "commercial"),
+    "government": ("government", "federal agency", "state agency", "municipal"),
+}
+
+
+def _norm(value: str) -> str:
+    """Lowercase and collapse punctuation so "non-profit" and "Non Profit" agree."""
+    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+
+
+def _canonical_country(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalised = _norm(value)
+    return _COUNTRY_ALIASES.get(normalised, normalised)
+
+
+def _canonical_institution(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalised = _norm(value)
+    for klass, aliases in _INSTITUTION_CLASSES.items():
+        if normalised == klass or normalised in {_norm(a) for a in aliases}:
+            return klass
+    return normalised
+
+
+# Codes are scanned case-sensitively (uppercase "US" is a country, lowercase
+# "us" is a pronoun); full names are case-insensitive.
+_COUNTRY_CODES = {
+    "US": "us",
+    "USA": "us",
+    "U.S.": "us",
+    "U.S.A.": "us",
+    "CA": "canada",
+    "AU": "australia",
+    "GB": "uk",
+}
+
+_COUNTRY_NAMES = {
+    "united states": "us",
+    "united states of america": "us",
+    "canada": "canada",
+    "united kingdom": "uk",
+    "australia": "australia",
+}
+
+
+def _named_countries(statement: str) -> set[str]:
+    """Countries the requirement names."""
+    named = {
+        canonical
+        for code, canonical in _COUNTRY_CODES.items()
+        if re.search(rf"(?<![A-Za-z]){re.escape(code)}(?![A-Za-z])", statement)
+    }
+    lowered = statement.lower()
+    named |= {canonical for name, canonical in _COUNTRY_NAMES.items() if name in lowered}
+    return named
+
+
+def _named_institution_classes(statement: str) -> set[str]:
+    named = set()
+    for klass, aliases in _INSTITUTION_CLASSES.items():
+        if any(re.search(rf"\b{re.escape(_norm(a))}\b", statement) for a in aliases):
+            named.add(klass)
+    return named
+
+
 class EligibilityInput(EngineInput):
     rfp: RFP
     profile: Profile
@@ -68,11 +156,23 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
             r"resubmission",
             r"amendment",
         ],
+        # Word-bounded: bare "state" matches "statement" (and "region" matches
+        # nothing useful), so a statement-of-work sentence raised a geography
+        # criterion and quoted itself as the requirement.
         CriterionCategory.GEOGRAPHY: [
             r"geographic",
-            r"region",
-            r"state",
-            r"country",
+            r"\bregion\b",
+            r"\bstate\b",
+            r"\bcountry\b",
+            r"located in",
+            # "Proposals are limited to 12 pages" is a length rule, so the
+            # narrowing phrase has to be attached to eligibility.
+            r"\beligibility (?:is )?limited to\b",
+            # "institutions in Pennsylvania", "institutions based in ..."
+            r"\binstitutions? (?:located |based )?in\b",
+            # "US institutions", "U.S. organizations": a location rule with no
+            # geography noun in it, which the nouns above never caught.
+            r"\b(?:US|U\.S\.)\b[^.]{0,40}\b(?:institutions|organizations|applicants|entities)\b",
         ],
         CriterionCategory.INSTITUTION_TYPE: [
             r"institution type",
@@ -140,8 +240,8 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                 CriterionCategory.CITIZENSHIP: "citizenship",
                 CriterionCategory.ESI_STATUS: "esi_eligible",
                 CriterionCategory.PRIOR_FUNDING: "prior_grants",
-                CriterionCategory.GEOGRAPHY: None,
-                CriterionCategory.INSTITUTION_TYPE: None,
+                CriterionCategory.GEOGRAPHY: "country",
+                CriterionCategory.INSTITUTION_TYPE: "institution_type",
                 CriterionCategory.MECHANISM_LIMIT: None,
                 CriterionCategory.OTHER: None,
             }
@@ -167,7 +267,7 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                     requirement=requirement,
                     profile_value=None,
                     verdict=EligibilityVerdict.NEED_MORE_INFO,
-                    reason=f"Profile missing {category.value} information",
+                    reason=f"Profile missing {attr} information",
                     confidence=0.5,
                 ))
             else:
@@ -275,6 +375,87 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                         reason = (
                             "RFP mentions prior funding without stating the rule; "
                             f"profile lists {profile_value}"
+                        )
+                        confidence = 0.5
+
+                # For geography: a named country either matches the profile's
+                # or it does not. A sub-national region ("Pennsylvania") is not
+                # answerable from a country field, so it stays need_more_info.
+                if category == CriterionCategory.GEOGRAPHY:
+                    stmt = requirement_text or ""
+                    canon = _canonical_country(str(profile_value))
+                    named = _named_countries(stmt)
+                    bar = any(
+                        marker in _norm(stmt)
+                        for marker in (
+                            "only",
+                            "limited to",
+                            "restricted to",
+                            "must be located",
+                            "must reside",
+                        )
+                    )
+                    if canon in named:
+                        verdict = EligibilityVerdict.ELIGIBLE
+                        reason = (
+                            f"RFP names {canon} in its location rule; "
+                            f"profile country is '{profile_value}'"
+                        )
+                        confidence = 0.85
+                    elif named and bar:
+                        verdict = EligibilityVerdict.NOT_ELIGIBLE
+                        reason = (
+                            f"RFP restricts eligibility to {'/'.join(sorted(named))}; "
+                            f"profile country is '{profile_value}'"
+                        )
+                        confidence = 0.8
+                    elif named:
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            f"RFP names {'/'.join(sorted(named))} without stating whether "
+                            f"it is a bar; profile country is '{profile_value}'"
+                        )
+                        confidence = 0.5
+                    else:
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            "RFP mentions geography without naming a country (a state or "
+                            f"region cannot be checked against a country field); "
+                            f"profile country is '{profile_value}'"
+                        )
+                        confidence = 0.5
+
+                # For institution type: the funder names classes. A profile
+                # class the RFP names is eligible; a bar naming only other
+                # classes is a rejection; anything vaguer needs a human.
+                if category == CriterionCategory.INSTITUTION_TYPE:
+                    stmt = requirement_text or ""
+                    klass = _canonical_institution(str(profile_value))
+                    named = _named_institution_classes(_norm(stmt))
+                    bar = any(
+                        marker in _norm(stmt)
+                        for marker in ("must be", "only", "limited to", "eligible", "required")
+                    )
+                    if klass in named:
+                        verdict = EligibilityVerdict.ELIGIBLE
+                        reason = (
+                            f"RFP names {klass} institutions; profile institution type "
+                            f"'{profile_value}' matches"
+                        )
+                        confidence = 0.85
+                    elif named and bar:
+                        verdict = EligibilityVerdict.NOT_ELIGIBLE
+                        reason = (
+                            f"RFP restricts eligibility to {'/'.join(sorted(named))}; "
+                            f"profile institution type is '{profile_value}'"
+                        )
+                        confidence = 0.75
+                    else:
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            "RFP mentions institution type without naming a class the "
+                            f"profile can be compared to; profile institution type is "
+                            f"'{profile_value}'"
                         )
                         confidence = 0.5
 

@@ -214,6 +214,73 @@ def test_eligibility_overlap_question_is_not_answered_by_a_grant_list():
     assert "cannot settle" in funding.reason
 
 
+def _eligibility_for(rfp_text: str, **profile_overrides):
+    out = run(EligibilityEngine().run(EligibilityInput(
+        rfp=make_rfp(raw_text=rfp_text), profile=make_profile(**profile_overrides),
+    )))
+    return out, {c.category.value: c for c in out.assessment.checks}
+
+
+def test_eligibility_matches_a_named_country():
+    out, checks = _eligibility_for(
+        "LOCATION\n\nOnly US institutions may apply.\n", country="US",
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.ELIGIBLE
+    assert "names us" in geo.reason.lower() or "us" in geo.reason
+    assert out.assessment.overall == EligibilityVerdict.ELIGIBLE
+
+
+def test_eligibility_named_country_bar_rejects_another_country():
+    """Negative control: the same sentence excludes a Canadian institution."""
+    out, checks = _eligibility_for(
+        "LOCATION\n\nOnly US institutions may apply.\n", country="CA",
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "restricts eligibility to us" in geo.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_subnational_region_is_not_guessed_from_a_country():
+    """"Pennsylvania institutions" cannot be settled by country="US"."""
+    out, checks = _eligibility_for(
+        "LOCATION\n\nEligibility is limited to Pennsylvania institutions.\n", country="US",
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "cannot be checked against a country field" in geo.reason
+
+
+def test_eligibility_geography_ignores_the_word_statement():
+    """`state` used to match inside `statement`, raising a geography criterion."""
+    out, checks = _eligibility_for(
+        "FORMAT\n\nThe statement of work must describe the aims.\n",
+    )
+    assert "geography" not in checks
+
+
+def test_eligibility_institution_type_is_compared_to_the_class_named():
+    rfp_text = "ORGANIZATION\n\nApplicants must be a nonprofit organization.\n"
+    _, matching = _eligibility_for(rfp_text, institution_type="nonprofit")
+    assert matching["institution_type"].verdict == EligibilityVerdict.ELIGIBLE
+
+    out, mismatched = _eligibility_for(rfp_text, institution_type="university")
+    assert mismatched["institution_type"].verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "restricts eligibility to nonprofit" in mismatched["institution_type"].reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_says_which_profile_field_is_missing():
+    out, checks = _eligibility_for(
+        "LOCATION\n\nOnly US institutions may apply.\n", country=None,
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "country" in geo.reason
+    assert "geography" in out.assessment.missing_info
+
+
 def test_eligibility_reads_the_stage_the_rfp_asks_for():
     """Reverse control: the check must follow the RFP, not a hardcoded stage."""
     senior_rfp = make_rfp(raw_text=(
