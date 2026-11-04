@@ -97,6 +97,15 @@ class ComplianceEngine(Engine[ComplianceInput, ComplianceOutput]):
 
         if check_type == "format":
             # Check formatting rules from RFP
+            if not proposal.sections:
+                # An empty proposal used to pass this check because the loop below
+                # had nothing to iterate over: the review reported GO for a
+                # document it never examined, and the pipeline exported it.
+                return {
+                    "pass": False,
+                    "details": "Proposal has no sections — nothing was drafted to review",
+                    "verdict": "CLARIFY",
+                }
             issues = []
             for section in proposal.sections.values():
                 if section.word_count > 0 and section.word_count < 50:

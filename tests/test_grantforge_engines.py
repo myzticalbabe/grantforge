@@ -940,19 +940,33 @@ def test_run_executes_when_validation_passes():
 
 # ── full pipeline ────────────────────────────────────────────────────────────
 
-def test_pipeline_runs_all_five_phases():
+def test_pipeline_runs_all_five_phases_and_flags_the_undrafted_proposal():
+    """All five phases run; the review says what the drafting phase did not do.
+
+    Drafting produces a checklist and no sections. The format check used to pass
+    that proposal because its loop had nothing to iterate, so the run exported a
+    submission bundle with success=True. It now reports the empty proposal, and
+    the run is not a success -- the phases still all run and their results come
+    back.
+    """
     result = run(GrantPipeline().run_full_pipeline(rfp_text=RFP_TEXT, profile=make_profile()))
-    assert result["success"] is True, result.get("error")
+    assert result["success"] is False
+    assert "compliance review failed: format" in result["error"]
     assert set(result["results"]) == {"discovery", "eligibility", "drafting", "compliance", "export"}
 
     proposal = result["proposal"]
     assert proposal.rfp_id
-    assert proposal.eligibility is not None
+    assert proposal.sections == {}
+    assert proposal.checklist, "the checklist is what the drafting phase produced"
     assert proposal.eligibility.overall == EligibilityVerdict.ELIGIBLE
 
-    export = result["results"]["export"]
-    assert len(export.files) == 3
-    assert result["results"]["compliance"].overall_pass is True
+    checks = result["results"]["compliance"].checks
+    assert checks["format"]["pass"] is False
+    assert "nothing was drafted" in checks["format"]["details"]
+    assert result["results"]["compliance"].overall_pass is False
+
+    # The export still ran: the work exists, it is just not a submission.
+    assert len(result["results"]["export"].files) == 3
 
 
 def test_pipeline_stops_before_drafting_an_ineligible_application():
