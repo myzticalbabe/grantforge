@@ -11,7 +11,9 @@ Run with: python -m pytest tests/test_grantforge_engines.py -v
 """
 
 import asyncio
+import json
 import os
+import subprocess
 import sys
 import zipfile
 from io import BytesIO
@@ -418,3 +420,63 @@ def test_pipeline_runs_all_five_phases():
     export = result["results"]["export"]
     assert len(export.files) == 3
     assert result["results"]["compliance"].overall_pass is True
+
+
+# ── entry point ──────────────────────────────────────────────
+
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+
+def _cli(*args: str) -> subprocess.CompletedProcess:
+    """Invoke the real entry point, not the command function.
+
+    A subprocess is the point: the typer/click incompatibility that made
+    `python -m grantforge --help` die with `Parameter.make_metavar() missing 1
+    required positional argument: 'ctx'` lived in the framework wiring, so
+    calling ``discover()`` in-process would have missed it entirely.
+    """
+    env = {
+        **os.environ,
+        "PYTHONPATH": os.path.join(_REPO_ROOT, "src"),
+        "PYTHONIOENCODING": "utf-8",
+        "NO_COLOR": "1",
+        "COLUMNS": "120",
+    }
+    return subprocess.run(
+        [sys.executable, "-m", "grantforge", *args],
+        cwd=_REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+
+
+def test_cli_help_lists_the_commands():
+    proc = _cli("--help")
+    assert proc.returncode == 0, proc.stderr
+    assert "discover" in proc.stdout
+    assert "assess" in proc.stdout
+    assert "review" in proc.stdout
+    assert "export" in proc.stdout
+
+    # Negative control: the same harness must see a non-zero exit when the
+    # command does not exist, otherwise the assertion above proves nothing.
+    bad = _cli("no-such-command")
+    assert bad.returncode != 0
+    assert "No such command" in (bad.stdout + bad.stderr)
+
+
+def test_cli_discover_writes_real_results(tmp_path):
+    out = tmp_path / "discovery.json"
+    proc = _cli("discover", "low power cardiac sensing", "--top", "3", "-o", str(out))
+    assert proc.returncode == 0, proc.stderr
+    assert out.exists()
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["success"] is True
+    assert [f["id"] for f in payload["opportunities"]] == ["nih", "nsf", "doe"]
+    assert payload["metadata"]["mode"] == "keyword_search"
+    assert payload["metadata"]["keywords"] == ["low", "power", "cardiac", "sensing"]
