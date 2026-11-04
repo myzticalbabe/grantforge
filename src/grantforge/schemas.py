@@ -83,7 +83,9 @@ class RFP(BaseModel):
     title: str
     number: str | None = None
     url: HttpUrl | None = None
-    deadline: datetime
+    # Optional: an RFP that states no date has no date, and a computed one is a
+    # fabricated fact the user would plan against.
+    deadline: datetime | None = None
     mechanism: GrantMechanism | None = None
     max_amount: float | None = None
     page_limit: int | None = None

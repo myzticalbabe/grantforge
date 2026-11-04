@@ -61,12 +61,47 @@ def test_discovery_parses_rfp_markers():
     rfp = out.rfp
     assert rfp is not None
     assert rfp.title == "INNOVATION FOR UNDERREPRESENTED RESEARCHERS (R01)"
+    assert rfp.deadline is not None
     assert rfp.deadline.date().isoformat() == "2027-03-01"
+    assert out.metadata["deadline_source"] == "parsed"
     assert rfp.page_limit == 12
     assert rfp.mechanism == GrantMechanism.R01
     assert rfp.max_amount == 450000.0
     assert rfp.sections_required == ["Specific Aims", "Research Strategy", "Budget Justification"]
     assert out.metadata["mode"] == "rfp_ingest"
+
+
+def test_discovery_does_not_invent_a_deadline_the_rfp_never_stated():
+    text = (
+        "PILOT STUDIES IN CARDIAC SENSING\n"
+        "Eligibility: Applicants must be early career investigators.\n"
+        "Proposals are limited to a 12 page research strategy.\n"
+        "Required sections: Specific Aims, Research Strategy\n"
+    )
+    out = run(DiscoveryEngine().run(DiscoveryInput(rfp_text=text)))
+    assert out.rfp is not None
+    assert out.rfp.deadline is None
+    assert out.metadata["deadline_source"] == "not_stated"
+
+    # Negative control: the same parser still reads a stated date.
+    dated = text.replace(
+        "Required sections:", "Deadline: 2027-01-15\nRequired sections:"
+    )
+    parsed = run(DiscoveryEngine().run(DiscoveryInput(rfp_text=dated)))
+    assert parsed.rfp is not None and parsed.rfp.deadline is not None
+    assert parsed.rfp.deadline.date().isoformat() == "2027-01-15"
+    assert parsed.metadata["deadline_source"] == "parsed"
+
+
+def test_export_says_a_deadline_is_unstated_instead_of_printing_none():
+    rfp = make_rfp(deadline=None)
+    out = run(ExportEngine().run(ExportInput(
+        proposal=make_proposal(), pi_profile=make_profile(), rfp=rfp,
+    )))
+    assert out.bundle.manifest["deadline"] is None
+    docx_text = _zip_text(out.files["prop_cardiac_01_proposal.docx"])
+    assert "not stated in the RFP" in docx_text
+    assert "Deadline: None" not in docx_text
 
 
 def test_discovery_searches_opportunities():
@@ -647,17 +682,16 @@ def test_export_writes_three_real_files():
 
 def test_export_fallback_produces_valid_office_packages(monkeypatch):
     """Force the no-dependency fallback (the shipped path on 3.15t) and check the
-    artefacts are real packages, not CSV bytes or a bare XML file in a ZIP."""
-    import builtins
+    artefacts are real packages, not CSV bytes or a bare XML file in a ZIP.
 
-    real_import = builtins.__import__
+    The renderers are imported once at module level now, so the fallback is
+    selected by the module attribute being None -- blocking builtins.__import__
+    would only hit re-imports inside already-imported libraries.
+    """
+    from grantforge import export as export_module
 
-    def deny(name, *args, **kwargs):
-        if name.split(".")[0] in {"openpyxl", "docx", "reportlab"}:
-            raise ImportError(f"blocked for test: {name}")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", deny)
+    for name in ("Document", "Workbook", "Font", "SimpleDocTemplate"):
+        monkeypatch.setattr(export_module, name, None)
     proposal = make_proposal()
     out = run(ExportEngine().run(ExportInput(
         proposal=proposal, pi_profile=make_profile(), rfp=make_rfp(),
