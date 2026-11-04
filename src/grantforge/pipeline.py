@@ -54,12 +54,11 @@ class GrantPipeline:
         rfp = disc_result.rfp
         if rfp is None and rfp_text:
             # Use the input text as RFP
-            from grantforge.schemas import RFP
-            from datetime import datetime, timedelta
+            # No deadline is passed: this path has no parsed RFP to take one from,
+            # and inventing "in 90 days" put a fabricated date in the export.
             rfp = RFP(
                 funder_id="unknown",
                 title="User RFP",
-                deadline=datetime.utcnow() + timedelta(days=90),
                 raw_text=rfp_text,
             )
             results["discovery"].rfp = rfp
