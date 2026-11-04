@@ -108,7 +108,6 @@ def _named_institution_classes(statement: str) -> set[str]:
 class EligibilityInput(EngineInput):
     rfp: RFP
     profile: Profile
-    strict: bool = False
 
 
 class EligibilityOutput(EngineOutput):

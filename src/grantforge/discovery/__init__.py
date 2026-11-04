@@ -216,34 +216,34 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
         )
 
     async def _get_funder_intel(self, input: DiscoveryInput) -> DiscoveryOutput:
-        """Parse 990 filings → giving patterns, priorities, contact info."""
+        """Look a funder up by EIN. No 990 is fetched, downloaded or parsed.
+
+        There is no 990 parser behind this, so the engine reports identity as the
+        EIN the caller supplied and nothing else: giving totals of 0 would read
+        as a measured filing, and the EIN->name map this used to carry was wrong
+        (53-0196605 is the American National Red Cross, not NSF), so a name here
+        was a fabricated identity the caller had no way to detect.
+        """
         ein = input.funder_ein or "unknown"
-
-        # Known funder lookup (expandable)
-        known_funders = {
-            "53-0196605": {"name": "National Science Foundation", "type": FunderType.FEDERAL},
-            "52-1257981": {"name": "National Institutes of Health", "type": FunderType.FEDERAL},
-        }
-
-        funder_info = known_funders.get(ein, {"name": f"Funder {ein}", "type": FunderType.OTHER})
 
         funder = Funder(
             id=ein,
-            name=funder_info["name"],
-            type=funder_info["type"],
+            name=f"EIN {ein}",
+            type=FunderType.OTHER,
             ein=ein,
-            giving_patterns={
-                "total_giving": 0,
-                "avg_grant": 0,
-                "focus_areas": [],
-                "geographic_preference": [],
-            },
+            # Left empty: no filing was read, so there is no giving pattern to
+            # report. Empty is the honest answer; zeros are a claim.
         )
 
         return DiscoveryOutput(
             success=True,
             funder_intel=funder,
-            metadata={"mode": "funder_intel", "ein": ein}
+            metadata={
+                "mode": "funder_intel",
+                "ein": ein,
+                "identity_source": "ein_only",
+                "giving_patterns_source": "unavailable_no_990_parser",
+            },
         )
 
     async def _build_profile(self, input: DiscoveryInput) -> DiscoveryOutput:
