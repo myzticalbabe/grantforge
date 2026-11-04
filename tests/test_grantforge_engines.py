@@ -570,6 +570,42 @@ def test_drafting_condense_without_a_section_fails():
     assert "not_in_proposal" in out.error
 
 
+def test_content_library_finds_a_section_by_its_body_not_only_its_key():
+    """search_library matched the key as a substring, so the body was invisible: a
+    section stored as 'preliminary_studies' was no hit for the query 'prior data'
+    even when it discussed exactly that, while the docstring called it semantic."""
+    engine = DraftingEngine()
+    run(engine.add_to_library(
+        "preliminary_studies",
+        "Our prior data from 240 subjects show the assay holds at 4 C for six hours.",
+    ))
+    run(engine.add_to_library(
+        "biosketches", "Dr. Ada Okonkwo, Rensselaer Polytechnic Institute.",
+    ))
+    hits = run(engine.search_library("prior data assay"))
+    assert [key for key, _ in hits] == ["preliminary_studies"]
+
+
+def test_content_library_ranks_a_key_match_above_a_body_only_match():
+    engine = DraftingEngine()
+    run(engine.add_to_library("broader_impacts", "Mentoring two undergraduates each summer."))
+    run(engine.add_to_library("mentoring_plan", "Each student joins the lab for two summers."))
+    hits = run(engine.search_library("mentoring"))
+    assert [key for key, _ in hits] == ["mentoring_plan", "broader_impacts"]
+
+
+def test_content_library_returns_nothing_for_a_query_it_cannot_serve():
+    """An unrelated query is not a hit, and the ranking is stable across calls: a
+    library search that always returns something is a search that ranks nothing."""
+    engine = DraftingEngine()
+    run(engine.add_to_library("specific_aims", "We will image cortical circuits in vivo."))
+    assert run(engine.search_library("zebrafish cryopreservation")) == []
+    run(engine.add_to_library("budget_justification", "One postdoc, 0.5 FTE, three years."))
+    first = run(engine.search_library("postdoc"))
+    assert [key for key, _ in first] == ["budget_justification"]
+    assert run(engine.search_library("postdoc")) == first
+
+
 # ── compliance ───────────────────────────────────────────────────────────────
 
 def test_compliance_fails_without_eligibility_assessment():
