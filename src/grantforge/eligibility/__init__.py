@@ -47,6 +47,11 @@ def _norm(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
+# Values that fill a required field without describing anything. A profile built
+# from no source carries these, so they must not be compared as if they were data.
+_UNSTATED = {"", "unknown", "unspecified", "unstated", "not stated", "n a", "none", "tbd"}
+
+
 def _canonical_country(value: str | None) -> str | None:
     if not value:
         return None
@@ -476,6 +481,17 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                         reason = (
                             f"RFP mentions career stage without naming one; "
                             f"profile career stage is '{profile_value}'"
+                        )
+                        confidence = 0.5
+                    elif stage_value in _UNSTATED:
+                        # A placeholder is not a stage: comparing "unknown" to
+                        # "early" produced NOT_ELIGIBLE at 0.8 confidence, a
+                        # rejection built from a field nobody filled in.
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            f"RFP targets {'/'.join(sorted(required))}-career "
+                            "applicants; the profile states no career stage, so "
+                            "this criterion is unchecked"
                         )
                         confidence = 0.5
                     elif stage_value in required:

@@ -177,6 +177,33 @@ def test_discovery_builds_profile_from_supplied_profile():
     assert out.metadata["areas"] == out.profile.research_areas
 
 
+def test_discovery_profile_shell_does_not_assert_stage_or_esi():
+    """A profile built from no source used to claim career_stage="early" and
+    esi_eligible=True, so an eligibility run answered "eligible" -- at 0.85
+    confidence, quoting the stage -- for an investigator nobody had described."""
+    # Reached by calling the mode directly: dispatch sends a bare query to
+    # opportunity search, so no pipeline path used to build this shell at all.
+    out = run(DiscoveryEngine()._build_profile(
+        DiscoveryInput(query="edge inference for wearable sensors")
+    ))
+    assert out.profile.career_stage == "unknown"
+    assert out.profile.esi_eligible is False
+    assert out.profile.research_areas  # the query's words are still a starting point
+    assert out.metadata["lookup"] == "none_no_publication_or_memory_source"
+    assert {"career_stage", "esi_eligible", "institution"} <= set(out.metadata["unestablished"])
+
+
+def test_discovery_query_does_not_overwrite_supplied_research_areas():
+    profile = make_profile()
+    out = run(DiscoveryEngine()._build_profile(
+        DiscoveryInput(profile=profile, query="quantum sensing arrays")
+    ))
+    assert out.profile.research_areas == [
+        "low-power sensing", "edge inference", "biomedical signal processing",
+    ]
+    assert "unestablished" not in out.metadata
+
+
 def test_discovery_rejects_empty_input():
     out = run(DiscoveryEngine().run(DiscoveryInput()))
     assert out.success is False
@@ -257,6 +284,16 @@ def test_eligibility_senior_pi_fails_an_early_career_rfp():
     # not a fixed window that begins mid-word.
     assert career.requirement.startswith("Applicants must be early career investigators")
     assert not career.requirement.startswith("search strategy")
+
+
+def test_eligibility_does_not_reject_a_profile_with_no_career_stage():
+    """"unknown" is a placeholder, not a stage: comparing it to "early" produced
+    NOT_ELIGIBLE at 0.8 confidence from a field nobody filled in."""
+    profile = make_profile(career_stage="unknown")
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=make_rfp(), profile=profile)))
+    career = next(c for c in out.assessment.checks if c.category.value == "career_stage")
+    assert career.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "states no career stage" in career.reason
 
 
 def test_eligibility_prior_funding_disclosure_is_not_a_bar():
