@@ -482,6 +482,37 @@ def test_pipeline_runs_all_five_phases():
     assert result["results"]["compliance"].overall_pass is True
 
 
+def test_pipeline_stops_before_drafting_an_ineligible_application():
+    """Writing a proposal the funder rejects is work with no outcome.
+
+    The pipeline used to draft, review and export anyway and return
+    success=True for a not_eligible applicant.
+    """
+    result = run(GrantPipeline().run_full_pipeline(
+        rfp_text=RFP_TEXT,
+        profile=make_profile(career_stage="senior"),
+    ))
+    assert result["success"] is False
+    assert "not eligible" in result["error"]
+    assert "career_stage" in result["error"]
+    assert "drafting" not in result["results"]
+    assert "export" not in result["results"]
+    # The verdict must survive the refusal: the caller needs the reason.
+    assert result["eligibility"].overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_pipeline_can_proceed_when_ineligibility_is_overridden():
+    """The gate is a default, not a lock: an explicit override still runs."""
+    result = run(GrantPipeline().run_full_pipeline(
+        rfp_text=RFP_TEXT,
+        profile=make_profile(career_stage="senior"),
+        allow_ineligible=True,
+    ))
+    assert result["success"] is True, result.get("error")
+    assert "drafting" in result["results"]
+    assert result["results"]["eligibility"].assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
 # ── entry point ──────────────────────────────────────────────
 
 _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
