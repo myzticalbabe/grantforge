@@ -292,7 +292,7 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
                 name="Auto-generated Profile",
                 institution="Unknown Institution",
                 career_stage="unknown",
-                esi_eligible=False,
+                esi_eligible=None,  # never stated; False would be a denial
                 research_areas=[],
             )
             unestablished = ["name", "institution", "career_stage", "esi_eligible"]
