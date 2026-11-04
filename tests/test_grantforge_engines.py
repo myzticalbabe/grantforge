@@ -380,6 +380,22 @@ def _with_section_text(proposal, text):
     return proposal
 
 
+def test_compliance_does_not_call_an_undetermined_eligibility_verified():
+    assessment = make_assessment(EligibilityVerdict.NEED_MORE_INFO)
+    assessment.missing_info = ["career stage", "country"]
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=assessment),
+        pi_profile=make_profile(),
+        check_types=["eligibility"],
+    )))
+    check = out.checks["eligibility"]
+    assert check["pass"] is False
+    assert check["verdict"] == "CLARIFY"
+    assert "undetermined" in check["details"]
+    assert "career stage" in check["details"] and "country" in check["details"]
+    assert out.overall_pass is False
+
+
 def test_compliance_ethics_flags_identifiable_data_without_echoing_it():
     proposal = make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE))
     _with_section_text(proposal, "Send data to ada@example.edu or call 555-201-8899.")
