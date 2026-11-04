@@ -112,12 +112,22 @@ def test_discovery_searches_opportunities():
     assert out.metadata["keywords"] == ["low", "power", "cardiac", "sensing"]
 
 
-def test_discovery_funder_intel_by_ein():
+def test_discovery_funder_intel_reports_only_the_ein_it_was_given():
+    """No 990 is fetched or parsed, so the intel must not claim a filing.
+
+    It used to emit total_giving=0/avg_grant=0 and a hardcoded name map, and the
+    map called 53-0196605 the National Science Foundation when that EIN is the
+    American National Red Cross -- a fabricated identity behind a measured-
+    looking dict. Identity is now the EIN and the giving figures are absent.
+    """
     out = run(DiscoveryEngine().run(DiscoveryInput(funder_ein="53-0196605")))
     assert out.funder_intel is not None
-    assert out.funder_intel.name == "National Institutes of Health" or out.funder_intel.type == FunderType.FEDERAL
     assert out.funder_intel.ein == "53-0196605"
+    assert out.funder_intel.name == "EIN 53-0196605"
+    assert out.funder_intel.giving_patterns == {}
     assert out.metadata["mode"] == "funder_intel"
+    assert out.metadata["identity_source"] == "ein_only"
+    assert out.metadata["giving_patterns_source"] == "unavailable_no_990_parser"
 
 
 def test_discovery_builds_profile_from_supplied_profile():
