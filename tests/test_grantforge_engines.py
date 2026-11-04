@@ -916,16 +916,57 @@ def test_pipeline_stops_before_drafting_an_ineligible_application():
     assert result["eligibility"].overall == EligibilityVerdict.NOT_ELIGIBLE
 
 
+def test_pipeline_does_not_report_success_for_a_run_that_exported_nothing():
+    """success=True for an empty bundle is the lie the pipeline used to tell; the
+    phase results still come back so the caller can see what did happen."""
+    result = run(GrantPipeline().run_full_pipeline(
+        rfp_text=RFP_TEXT,
+        profile=make_profile(),
+        export_formats=[],
+    ))
+    assert result["success"] is False
+    assert "produced no files" in result["error"]
+    assert result["proposal"] is not None
+    assert set(result["results"]) == {"discovery", "eligibility", "drafting", "compliance", "export"}
+    assert result["results"]["export"].files == {}
+
+
+def test_pipeline_does_not_report_success_when_review_fails(monkeypatch):
+    """A failing compliance review is a failed run, not a run with a note."""
+    pipeline = GrantPipeline()
+
+    async def failing_review(_input):
+        out = await original(_input)
+        out.overall_pass = False
+        out.checks = dict(out.checks, format={"pass": False, "details": "too short", "verdict": "CLARIFY"})
+        return out
+
+    original = pipeline.compliance.run
+    monkeypatch.setattr(pipeline.compliance, "run", failing_review)
+    result = run(pipeline.run_full_pipeline(rfp_text=RFP_TEXT, profile=make_profile()))
+    assert result["success"] is False
+    assert "review failed" in result["error"] and "format" in result["error"]
+    # The artefacts are still produced; the verdict is what changed.
+    assert len(result["results"]["export"].files) == 3
+
+
 def test_pipeline_can_proceed_when_ineligibility_is_overridden():
-    """The gate is a default, not a lock: an explicit override still runs."""
+    """The gate is a default, not a lock: the override still runs every phase.
+
+    It does not turn the outcome into a success -- the review checks the same
+    verdict and fails, so success is False with eligibility named, while the
+    artefacts are produced.
+    """
     result = run(GrantPipeline().run_full_pipeline(
         rfp_text=RFP_TEXT,
         profile=make_profile(career_stage="senior"),
         allow_ineligible=True,
     ))
-    assert result["success"] is True, result.get("error")
     assert "drafting" in result["results"]
+    assert len(result["results"]["export"].files) == 3
     assert result["results"]["eligibility"].assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+    assert result["success"] is False
+    assert "eligibility" in result["error"]
 
 
 # ── entry point ──────────────────────────────────────────────
