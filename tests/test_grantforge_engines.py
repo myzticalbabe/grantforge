@@ -14,6 +14,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import zipfile
@@ -373,12 +374,56 @@ def test_drafting_writes_a_section_using_the_profile():
     assert "Define acronym on first use" in out.suggestions
 
 
-def test_drafting_revise_instruction_changes_the_body():
+def test_drafting_draft_is_labelled_as_a_template():
+    """The generated body must not pass itself off as proposal text: it used to
+    assert the work "aligns with the funder's priorities" and "demonstrates clear
+    significance and innovation" -- claims nothing in this engine assessed."""
     out = run(DraftingEngine().run(DraftingInput(
         rfp=make_rfp(), profile=make_profile(), proposal=make_proposal(),
-        section_id="specific_aims", instruction="revise",
+        section_id="specific_aims", instruction="draft",
     )))
-    assert out.section.content.startswith("[Revised content for specific_aims")
+    assert out.section.content.startswith("TEMPLATE:")
+    assert "grantforge has not assessed" in out.section.content
+    assert "aligns with the funder's priorities" not in out.section.content
+
+
+def test_drafting_revise_and_expand_refuse_instead_of_returning_a_marker():
+    """These returned "[Revised content for ...]" with success=True, so a bracketed
+    TODO could be exported as the section body and counted as prose."""
+    for instruction in ("revise", "expand"):
+        out = run(DraftingEngine().run(DraftingInput(
+            rfp=make_rfp(), profile=make_profile(), proposal=make_proposal(),
+            section_id="specific_aims", instruction=instruction,
+        )))
+        assert out.success is False
+        assert "text model" in out.error
+        assert out.section is None
+
+
+def test_drafting_condense_trims_the_existing_section():
+    proposal = make_proposal()
+    original = proposal.sections["specific_aims"].content
+    out = run(DraftingEngine().run(DraftingInput(
+        rfp=make_rfp(), profile=make_profile(), proposal=proposal,
+        section_id="specific_aims", instruction="condense",
+    )))
+    assert out.success is True
+    assert out.section.content
+    assert "[" not in out.section.content
+    assert len(out.section.content.split()) <= len(original.split())
+    assert out.section.version == proposal.sections["specific_aims"].version + 1
+    # Every kept sentence is the caller's own text, not invented prose.
+    first_sentence = re.split(r"(?<=[.!?])\s+", original.strip())[0]
+    assert out.section.content.startswith(first_sentence)
+
+
+def test_drafting_condense_without_a_section_fails():
+    out = run(DraftingEngine().run(DraftingInput(
+        rfp=make_rfp(), profile=make_profile(), proposal=make_proposal(),
+        section_id="not_in_proposal", instruction="condense",
+    )))
+    assert out.success is False
+    assert "not_in_proposal" in out.error
 
 
 # ── compliance ───────────────────────────────────────────────────────────────
