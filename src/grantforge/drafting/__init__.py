@@ -17,6 +17,21 @@ from grantforge.schemas import (
 )
 
 
+_LIBRARY_STOPWORDS = frozenset(
+    """a an and any are as at be been by can for from has have if in into is it
+    its no not of on or our so than that the their there these this to was we
+    were what when which will with you your""".split()
+)
+
+
+def _library_terms(text: str) -> set[str]:
+    """Content words in ``text``: lowercased, three letters or more, no stopwords."""
+    return {
+        term for term in re.findall(r"[a-z][a-z0-9]{2,}", text.lower())
+        if term not in _LIBRARY_STOPWORDS
+    }
+
+
 class DraftingInput(EngineInput):
     rfp: RFP
     profile: Profile
@@ -268,10 +283,34 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
         """Add content to searchable library."""
         self._content_library[key] = content
 
-    async def search_library(self, query: str) -> list[tuple[str, str]]:
-        """Search library for relevant content (semantic)."""
-        # TODO: Embed query, cosine similarity vs library embeddings
-        return [(k, v) for k, v in self._content_library.items() if query.lower() in k.lower()]
+    async def search_library(self, query: str, limit: int = 3) -> list[tuple[str, str]]:
+        """Rank stored content by the terms it shares with ``query``.
+
+        This used to be a substring test against the key alone, so a section stored
+        as ``preliminary_studies`` could not be found by the query ``prior data``
+        even when its body was about exactly that. Ranking key and body together
+        needs no model and no embedding: a query term found in the key weighs 2,
+        the same term found only in the body weighs 1, and an entry sharing nothing
+        is not a hit at all. Ties break on key, so one library always ranks the
+        same way twice.
+        """
+        terms = _library_terms(query)
+        if not terms:
+            return []
+        scored: list[tuple[int, str]] = []
+        for key, content in self._content_library.items():
+            key_terms = _library_terms(key)
+            body_terms = _library_terms(content)
+            score = 0
+            for term in terms:
+                if term in key_terms:
+                    score += 2
+                elif term in body_terms:
+                    score += 1
+            if score:
+                scored.append((score, key))
+        scored.sort(key=lambda pair: (-pair[0], pair[1]))
+        return [(key, self._content_library[key]) for _, key in scored[:limit]]
 
     async def health_check(self) -> dict[str, Any]:
         return await super().health_check()
