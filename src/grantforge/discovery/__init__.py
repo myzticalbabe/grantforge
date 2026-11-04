@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from grantforge import config as grantforge_config
 from grantforge.engine import Engine, EngineInput, EngineOutput
 from grantforge.schemas import (
     Funder,
@@ -47,7 +48,9 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
 
     def __init__(self):
         super().__init__()
-        self._ov_embed_url = "http://127.0.0.1:18083/v1/embeddings"
+        # Read at construction, not import, so GRANTFORGE_OV_EMBED_URL is honoured
+        # for a process that sets it after importing grantforge.
+        self._ov_embed_url = grantforge_config.OV_EMBED_URL
         self._initialized = False
 
     async def _ensure_initialized(self):
