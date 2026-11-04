@@ -122,6 +122,34 @@ class GrantPipeline:
         export_result = await self.export.run(export_input)
         results["export"] = export_result
 
+        # A run whose review failed, or whose export produced nothing, did not
+        # succeed: it used to return success=True regardless, so a caller could
+        # not tell a submission bundle from an empty one. The proposal and every
+        # phase result are still returned -- the work exists, the verdict is just
+        # not "success".
+        failed_review = [
+            name for name, check in comp_result.checks.items()
+            if not check.get("pass", False)
+        ]
+        exported = list(export_result.files or {})
+        problems = []
+        if failed_review:
+            problems.append("compliance review failed: " + ", ".join(sorted(failed_review)))
+        if not export_result.success:
+            problems.append(f"export failed: {export_result.error or 'no reason given'}")
+        elif not exported:
+            problems.append(
+                "export produced no files "
+                f"(formats requested: {[f.value for f in export_formats] or 'none'})"
+            )
+        if problems:
+            return {
+                "success": False,
+                "error": "; ".join(problems),
+                "proposal": proposal,
+                "results": results,
+            }
+
         return {
             "success": True,
             "proposal": proposal,
