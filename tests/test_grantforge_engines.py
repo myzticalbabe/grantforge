@@ -12,16 +12,17 @@ Run with: python -m pytest tests/test_grantforge_engines.py -v
 
 import asyncio
 import hashlib
+import importlib
 import json
 import os
 import re
 import subprocess
 import sys
 import zipfile
-
-import pytest
 from datetime import datetime, timezone
 from io import BytesIO
+
+import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
@@ -41,6 +42,7 @@ from grantforge.discovery import DiscoveryEngine, DiscoveryInput  # noqa: E402
 from grantforge.drafting import DraftingEngine, DraftingInput  # noqa: E402
 from grantforge.eligibility import EligibilityEngine, EligibilityInput  # noqa: E402
 from grantforge.engine import Engine, EngineInput, EngineOutput  # noqa: E402
+from grantforge import config as config_module  # noqa: E402
 from grantforge import export as export_module  # noqa: E402
 from grantforge.export import ExportEngine, ExportInput  # noqa: E402
 from grantforge.pipeline import GrantPipeline  # noqa: E402
@@ -1084,3 +1086,22 @@ def test_cli_discover_writes_real_results(tmp_path):
     assert payload["metadata"]["mode"] == "keyword_search"
     assert payload["metadata"]["keywords"] == ["cardiac", "sensing"]
     assert payload["metadata"]["corpus_size"] == 5
+
+
+def test_discovery_embed_url_follows_the_documented_override(monkeypatch):
+    """GRANTFORGE_OV_EMBED_URL must move the endpoint, not just be documented."""
+    default_url = "http://127.0.0.1:18083/v1/embeddings"
+    override = "http://127.0.0.1:19999/v1/embeddings"
+
+    assert DiscoveryEngine()._ov_embed_url == default_url
+
+    monkeypatch.setenv("GRANTFORGE_OV_EMBED_URL", override)
+    importlib.reload(config_module)
+    try:
+        assert DiscoveryEngine()._ov_embed_url == override
+    finally:
+        monkeypatch.delenv("GRANTFORGE_OV_EMBED_URL", raising=False)
+        importlib.reload(config_module)
+
+    # The override must not linger for later tests.
+    assert DiscoveryEngine()._ov_embed_url == default_url
