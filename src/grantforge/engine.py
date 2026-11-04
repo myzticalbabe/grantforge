@@ -53,8 +53,19 @@ class Engine(ABC, Generic[InputT, OutputT]):
         return await self.execute(input)
 
     async def health_check(self) -> dict[str, Any]:
-        """Health check for monitoring."""
-        return {"engine": self.name, "status": "healthy", "version": self.version}
+        """Report what was probed. The base engine probes nothing.
+
+        This used to answer ``status: healthy`` unconditionally, and subclasses
+        that added their own probes inherited it: discovery reported
+        ``ov_embed_server: unknown`` next to ``status: healthy``. A monitoring
+        hook that cannot go false protects nothing.
+        """
+        return {
+            "engine": self.name,
+            "status": "unprobed",
+            "detail": "no dependency probe is wired for this engine",
+            "version": self.version,
+        }
 
 
 class EngineRegistry:
