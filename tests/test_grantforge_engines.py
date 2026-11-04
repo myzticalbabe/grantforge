@@ -136,6 +136,44 @@ def test_eligibility_non_esi_is_not_eligible():
     assert esi.verdict == EligibilityVerdict.NOT_ELIGIBLE
 
 
+def test_eligibility_senior_pi_fails_an_early_career_rfp():
+    """The RFP names its stage; the profile must be measured against that.
+
+    This was a live defect: the career-stage branch accepted ("early", "mid")
+    outright, so a senior PI scored need_more_info — not eligible, and not
+    ineligible either — against a programme that says "must be early career".
+    """
+    profile = make_profile(career_stage="senior")
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=make_rfp(), profile=profile)))
+    career = next(c for c in out.assessment.checks if c.category.value == "career_stage")
+    assert career.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "'senior'" in career.reason and "early" in career.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+    # The recorded requirement must be the sentence a grant office can read,
+    # not a fixed window that begins mid-word.
+    assert career.requirement.startswith("Applicants must be early career investigators")
+    assert not career.requirement.startswith("search strategy")
+
+
+def test_eligibility_reads_the_stage_the_rfp_asks_for():
+    """Reverse control: the check must follow the RFP, not a hardcoded stage."""
+    senior_rfp = make_rfp(raw_text=(
+        "SENIOR INVESTIGATOR AWARD\n\n"
+        "Applicants must be senior investigators with an established program.\n"
+    ))
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=senior_rfp, profile=make_profile())))
+    career = next(c for c in out.assessment.checks if c.category.value == "career_stage")
+    assert career.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "early" in career.reason and "does not match" in career.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+    senior_profile = make_profile(career_stage="senior")
+    ok = run(EligibilityEngine().run(EligibilityInput(rfp=senior_rfp, profile=senior_profile)))
+    career_ok = next(c for c in ok.assessment.checks if c.category.value == "career_stage")
+    assert career_ok.verdict == EligibilityVerdict.ELIGIBLE
+
+
 # ── drafting ─────────────────────────────────────────────────────────────────
 
 def test_drafting_creates_proposal_and_checklist():
