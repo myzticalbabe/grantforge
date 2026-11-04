@@ -806,6 +806,21 @@ def test_export_writes_three_real_files():
     assert out.bundle.manifest["deadline"].startswith("2027-03-01")
 
 
+def test_export_manifest_does_not_advertise_a_page_count_it_never_took():
+    """The manifest carried "page_counts": {} with a TODO: compute.
+
+    Nothing rendered and read back a page count, so an empty dict was a
+    measurement-shaped hole -- a caller checking a page limit reads it as zero
+    pages. The key is gone; the manifest lists the formats and files it produced.
+    """
+    out = run(ExportEngine().run(ExportInput(
+        proposal=make_proposal(), pi_profile=make_profile(), rfp=make_rfp(),
+    )))
+    assert "page_counts" not in out.bundle.manifest
+    assert out.bundle.manifest["formats"] == ["pdf", "docx", "xlsx"]
+    assert out.bundle.manifest["files"] == sorted(out.files)
+
+
 def test_export_fallback_produces_valid_office_packages(monkeypatch):
     """Force the no-dependency fallback (the shipped path on 3.15t) and check the
     artefacts are real packages, not CSV bytes or a bare XML file in a ZIP.
