@@ -404,7 +404,24 @@ def test_drafting_writes_a_section_using_the_profile():
     assert out.section.word_count > 20
     assert "Dr. Ada Okonkwo" in out.section.content
     assert "Rensselaer Polytechnic Institute" in out.section.content
-    assert "Define acronym on first use" in out.suggestions
+    assert "RFP" in " ".join(out.suggestions)  # names the acronym actually used
+
+
+def test_drafting_does_not_invent_an_acronym_problem():
+    """The acronym suggestion used to fire on any text lacking the word
+    "acronym", including text that contains no acronyms at all."""
+    out = run(DraftingEngine().run(DraftingInput(
+        rfp=make_rfp(), profile=make_profile(), proposal=make_proposal(),
+        section_id="research_strategy", instruction="draft",
+    )))
+    engine = DraftingEngine()
+    plain = engine._generate_suggestions("x", "the method runs in plain words for ten minutes")
+    assert not [s for s in plain if s.startswith("Define on first use")]
+    expanded = engine._generate_suggestions("x", "magnetic sensing (MEGS) is used throughout")
+    assert not [s for s in expanded if "MEGS" in s]
+    unexpanded = engine._generate_suggestions("x", "MEGS is used throughout this section")
+    assert any("MEGS" in s for s in unexpanded)
+    assert any("RFP" in s for s in out.suggestions)
 
 
 def test_drafting_draft_is_labelled_as_a_template():

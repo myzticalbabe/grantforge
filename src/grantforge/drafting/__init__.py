@@ -203,14 +203,30 @@ class DraftingEngine(Engine[DraftingInput, DraftingOutput]):
             condensed = " ".join(words[:80]) + " …"
         return condensed
 
+    # An acronym is a run of capitals; it counts as defined when the text spells
+    # it out in parentheses, the conventional form ("magnetic sensing (MEGS)").
+    _ACRONYM_RE = re.compile(r"\b[A-Z]{2,6}\b")
+    _EXPANSION_RE = re.compile(r"\([^()]*?([A-Z]{2,6})s?\)")
+
+    def _undefined_acronyms(self, content: str) -> list[str]:
+        defined = set(self._EXPANSION_RE.findall(content))
+        return sorted({a for a in self._ACRONYM_RE.findall(content) if a not in defined})
+
     def _generate_suggestions(self, section_id: str, content: str) -> list[str]:
+        """Advice about this text, naming what in it prompted the advice.
+
+        The acronym suggestion used to fire whenever the literal word "acronym"
+        was absent, so it appeared on text with no acronyms at all and named
+        none of the ones present.
+        """
         suggestions = []
         if "quantif" not in content.lower() and "%" not in content and "$" not in content:
             suggestions.append("Consider adding quantitative outcome metric")
         if len(content.split()) > 300:
             suggestions.append("Section may exceed page limit - consider condensing")
-        if "acronym" not in content.lower():
-            suggestions.append("Define acronym on first use")
+        undefined = self._undefined_acronyms(content)
+        if undefined:
+            suggestions.append("Define on first use: " + ", ".join(undefined))
         return suggestions
 
     async def add_to_library(self, key: str, content: str) -> None:
