@@ -11,11 +11,13 @@ Run with: python -m pytest tests/test_grantforge_engines.py -v
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import zipfile
+from datetime import datetime, timezone
 from io import BytesIO
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -302,6 +304,44 @@ def test_compliance_flags_a_too_short_section():
     )))
     assert out.overall_pass is False
     assert "too short" in out.checks["format"]["details"]
+
+
+def test_compliance_audit_entry_does_not_claim_a_record_it_did_not_write(monkeypatch):
+    """No sink configured: the entry must say so, not `dlv_recorded: True`."""
+    monkeypatch.delenv("GRANTFORGE_AUDIT_DIR", raising=False)
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE)),
+        pi_profile=make_profile(), check_types=["format"],
+    )))
+    entry = out.audit_entries[0]
+    assert entry["dlv_recorded"] is False
+    assert "GRANTFORGE_AUDIT_DIR" in entry["reason"]
+    # The timestamp is a reading, not a constant baked on 2026-11-03.
+    assert entry["timestamp"] != "2026-11-03T00:00:00Z"
+    stamped = datetime.strptime(entry["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    assert abs((datetime.now(timezone.utc) - stamped).total_seconds()) < 300
+    assert len(entry["sha256"]) == 64
+
+
+def test_compliance_audit_entry_lands_in_the_configured_sink(tmp_path, monkeypatch):
+    """With a sink, the claim is backed by a readable line in the file."""
+    monkeypatch.setenv("GRANTFORGE_AUDIT_DIR", str(tmp_path))
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE)),
+        pi_profile=make_profile(), check_types=["format", "ethics"],
+    )))
+    assert [e["dlv_recorded"] for e in out.audit_entries] == [True, True]
+
+    path = tmp_path / "grantforge_compliance.jsonl"
+    lines = [json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines()]
+    assert [row["check_type"] for row in lines] == ["format", "ethics"]
+    assert all(row["proposal_id"] == "prop_cardiac_01" for row in lines)
+
+    # Each line's digest must describe its own content.
+    for row, entry in zip(lines, out.audit_entries):
+        core = {key: row[key] for key in ("check_type", "proposal_id", "verdict", "timestamp")}
+        body = json.dumps(core, sort_keys=True, separators=(",", ":"))
+        assert hashlib.sha256(body.encode("utf-8")).hexdigest() == row["sha256"] == entry["sha256"]
 
 
 def test_compliance_ineligible_proposal_is_no_go():
