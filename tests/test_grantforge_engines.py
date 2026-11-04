@@ -1102,6 +1102,15 @@ def test_cli_discover_writes_real_results(tmp_path):
     assert payload["metadata"]["corpus_size"] == 5
 
 
+def test_engine_health_does_not_claim_healthy_without_a_probe():
+    """A status field is a claim: every engine here probes nothing, so none is healthy."""
+    health = run(GrantPipeline().health_check_all())
+    assert set(health) == {"discovery", "eligibility", "drafting", "compliance", "export"}
+    for name, report in health.items():
+        assert report["status"] == "unprobed", (name, report)
+        assert report["detail"], (name, report)
+
+
 def test_discovery_embed_url_follows_the_documented_override(monkeypatch):
     """GRANTFORGE_OV_EMBED_URL must move the endpoint, not just be documented."""
     default_url = "http://127.0.0.1:18083/v1/embeddings"
