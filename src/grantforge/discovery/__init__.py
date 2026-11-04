@@ -197,8 +197,10 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
                 sections = [s.strip() for s in match.group(1).split(",")]
                 break
 
-        # Extract mechanism
-        mechanism = None
+        # Extract mechanism. Typed as the schema enum and built through it, so
+        # the RFP is constructed with a GrantMechanism rather than a bare str
+        # that only pydantic's coercion happened to accept.
+        mechanism: GrantMechanism | None = None
         mech_patterns = {
             "R01": r"R01|R01\s*grant",
             "R21": r"R21|R21\s*grant",
@@ -208,7 +210,7 @@ class DiscoveryEngine(Engine[DiscoveryInput, DiscoveryOutput]):
         }
         for mech, pattern in mech_patterns.items():
             if re.search(pattern, text, re.IGNORECASE):
-                mechanism = mech
+                mechanism = GrantMechanism(mech)
                 break
 
         # Extract max amount

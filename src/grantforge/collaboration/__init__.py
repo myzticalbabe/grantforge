@@ -3,7 +3,7 @@ Collaboration Engine — Operational Transform for real-time co-editing + Anchor
 """
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Literal
 from datetime import datetime
 from uuid import uuid4
 
@@ -186,7 +186,11 @@ class CollaborationEngine(Engine[CollaborationInput, CollaborationOutput]):
 
     async def _move_checklist_item(self, input: CollaborationInput) -> CollaborationOutput:
         """Advance one checklist item one column: pending -> in_progress -> review -> done."""
-        order = ["pending", "in_progress", "review", "done"]
+        # Annotated as the schema's own literal so the step below assigns a
+        # member of `ChecklistItem.status`, not an arbitrary `str`.
+        order: tuple[Literal["pending", "in_progress", "review", "done"], ...] = (
+            "pending", "in_progress", "review", "done",
+        )
         item = next((i for i in input.proposal.checklist if i.id == input.section_id), None)
         if item is None:
             return CollaborationOutput(
