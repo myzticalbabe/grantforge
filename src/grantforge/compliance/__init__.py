@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from grantforge.engine import Engine, EngineInput, EngineOutput
-from grantforge.schemas import Proposal, Profile
+from grantforge.schemas import EligibilityVerdict, Proposal, Profile
 
 # Where compliance decisions are appended as JSONL. Unset means nothing is
 # persisted, and the audit entry below must say so rather than claim a record.
@@ -74,8 +74,18 @@ class ComplianceEngine(Engine[ComplianceInput, ComplianceOutput]):
             # Check if proposal has eligibility assessment
             if proposal.eligibility is None:
                 return {"pass": False, "details": "No eligibility assessment attached", "verdict": "CLARIFY"}
-            if proposal.eligibility.overall.value == "not_eligible":
+            overall = proposal.eligibility.overall
+            if overall == EligibilityVerdict.NOT_ELIGIBLE:
                 return {"pass": False, "details": "Proposal not eligible", "verdict": "NO-GO"}
+            if overall == EligibilityVerdict.NEED_MORE_INFO:
+                # "Undetermined" used to be reported as "verified": the check
+                # only looked for not_eligible.
+                missing = ", ".join(proposal.eligibility.missing_info) or "criteria the assessment did not settle"
+                return {
+                    "pass": False,
+                    "details": f"Eligibility undetermined — missing {missing}",
+                    "verdict": "CLARIFY",
+                }
             return {"pass": True, "details": "Eligibility verified", "verdict": "GO"}
 
         if check_type == "budget":
