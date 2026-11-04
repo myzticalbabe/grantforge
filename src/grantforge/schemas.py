@@ -99,6 +99,11 @@ class Profile(BaseModel):
     orcid: str | None = None
     institution: str
     department: str | None = None
+    # The two attributes an RFP asks about by name but the model had no field
+    # for, so geography and institution-type criteria could only ever answer
+    # need_more_info. Free text; the eligibility engine canonicalises it.
+    institution_type: str | None = None  # "university", "nonprofit", "hospital", ...
+    country: str | None = None  # "US", "CA", "GB", ...
     career_stage: str  # "early", "mid", "senior"
     esi_eligible: bool = False
     citizenship: list[str] = []

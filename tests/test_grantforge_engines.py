@@ -11,11 +11,13 @@ Run with: python -m pytest tests/test_grantforge_engines.py -v
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import zipfile
+from datetime import datetime, timezone
 from io import BytesIO
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -178,6 +180,107 @@ def test_eligibility_senior_pi_fails_an_early_career_rfp():
     assert not career.requirement.startswith("search strategy")
 
 
+def test_eligibility_prior_funding_disclosure_is_not_a_bar():
+    """The fixture RFP only requires disclosure; a funded PI is still eligible."""
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=make_rfp(), profile=make_profile())))
+    funding = next(c for c in out.assessment.checks if c.category.value == "prior_funding")
+    assert funding.verdict == EligibilityVerdict.ELIGIBLE
+    assert "disclosure only, not exclusion" in funding.reason
+    assert out.assessment.overall == EligibilityVerdict.ELIGIBLE
+
+
+def test_eligibility_prior_funding_bar_rejects_a_funded_pi():
+    """Negative control: the same profile fails when the RFP forbids the funding."""
+    rfp = make_rfp(raw_text=(
+        "CONCURRENT SUPPORT RULE\n\n"
+        "Applicants must not hold concurrent funding from this program.\n"
+    ))
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=rfp, profile=make_profile())))
+    funding = next(c for c in out.assessment.checks if c.category.value == "prior_funding")
+    assert funding.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "bars" in funding.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_overlap_question_is_not_answered_by_a_grant_list():
+    """Overlap is a judgement about aims; a list of award numbers cannot make it."""
+    rfp = make_rfp(raw_text=(
+        "OVERLAP POLICY\n\n"
+        "Applications that overlap with an existing award will be returned without review.\n"
+    ))
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=rfp, profile=make_profile())))
+    funding = next(c for c in out.assessment.checks if c.category.value == "prior_funding")
+    assert funding.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "cannot settle" in funding.reason
+
+
+def _eligibility_for(rfp_text: str, **profile_overrides):
+    out = run(EligibilityEngine().run(EligibilityInput(
+        rfp=make_rfp(raw_text=rfp_text), profile=make_profile(**profile_overrides),
+    )))
+    return out, {c.category.value: c for c in out.assessment.checks}
+
+
+def test_eligibility_matches_a_named_country():
+    out, checks = _eligibility_for(
+        "LOCATION\n\nOnly US institutions may apply.\n", country="US",
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.ELIGIBLE
+    assert "names us" in geo.reason.lower() or "us" in geo.reason
+    assert out.assessment.overall == EligibilityVerdict.ELIGIBLE
+
+
+def test_eligibility_named_country_bar_rejects_another_country():
+    """Negative control: the same sentence excludes a Canadian institution."""
+    out, checks = _eligibility_for(
+        "LOCATION\n\nOnly US institutions may apply.\n", country="CA",
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "restricts eligibility to us" in geo.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_subnational_region_is_not_guessed_from_a_country():
+    """"Pennsylvania institutions" cannot be settled by country="US"."""
+    out, checks = _eligibility_for(
+        "LOCATION\n\nEligibility is limited to Pennsylvania institutions.\n", country="US",
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "cannot be checked against a country field" in geo.reason
+
+
+def test_eligibility_geography_ignores_the_word_statement():
+    """`state` used to match inside `statement`, raising a geography criterion."""
+    out, checks = _eligibility_for(
+        "FORMAT\n\nThe statement of work must describe the aims.\n",
+    )
+    assert "geography" not in checks
+
+
+def test_eligibility_institution_type_is_compared_to_the_class_named():
+    rfp_text = "ORGANIZATION\n\nApplicants must be a nonprofit organization.\n"
+    _, matching = _eligibility_for(rfp_text, institution_type="nonprofit")
+    assert matching["institution_type"].verdict == EligibilityVerdict.ELIGIBLE
+
+    out, mismatched = _eligibility_for(rfp_text, institution_type="university")
+    assert mismatched["institution_type"].verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "restricts eligibility to nonprofit" in mismatched["institution_type"].reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_says_which_profile_field_is_missing():
+    out, checks = _eligibility_for(
+        "LOCATION\n\nOnly US institutions may apply.\n", country=None,
+    )
+    geo = checks["geography"]
+    assert geo.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "country" in geo.reason
+    assert "geography" in out.assessment.missing_info
+
+
 def test_eligibility_reads_the_stage_the_rfp_asks_for():
     """Reverse control: the check must follow the RFP, not a hardcoded stage."""
     senior_rfp = make_rfp(raw_text=(
@@ -268,6 +371,44 @@ def test_compliance_flags_a_too_short_section():
     )))
     assert out.overall_pass is False
     assert "too short" in out.checks["format"]["details"]
+
+
+def test_compliance_audit_entry_does_not_claim_a_record_it_did_not_write(monkeypatch):
+    """No sink configured: the entry must say so, not `dlv_recorded: True`."""
+    monkeypatch.delenv("GRANTFORGE_AUDIT_DIR", raising=False)
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE)),
+        pi_profile=make_profile(), check_types=["format"],
+    )))
+    entry = out.audit_entries[0]
+    assert entry["dlv_recorded"] is False
+    assert "GRANTFORGE_AUDIT_DIR" in entry["reason"]
+    # The timestamp is a reading, not a constant baked on 2026-11-03.
+    assert entry["timestamp"] != "2026-11-03T00:00:00Z"
+    stamped = datetime.strptime(entry["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    assert abs((datetime.now(timezone.utc) - stamped).total_seconds()) < 300
+    assert len(entry["sha256"]) == 64
+
+
+def test_compliance_audit_entry_lands_in_the_configured_sink(tmp_path, monkeypatch):
+    """With a sink, the claim is backed by a readable line in the file."""
+    monkeypatch.setenv("GRANTFORGE_AUDIT_DIR", str(tmp_path))
+    out = run(ComplianceEngine().run(ComplianceInput(
+        proposal=make_proposal(eligibility=make_assessment(EligibilityVerdict.ELIGIBLE)),
+        pi_profile=make_profile(), check_types=["format", "ethics"],
+    )))
+    assert [e["dlv_recorded"] for e in out.audit_entries] == [True, True]
+
+    path = tmp_path / "grantforge_compliance.jsonl"
+    lines = [json.loads(raw) for raw in path.read_text(encoding="utf-8").splitlines()]
+    assert [row["check_type"] for row in lines] == ["format", "ethics"]
+    assert all(row["proposal_id"] == "prop_cardiac_01" for row in lines)
+
+    # Each line's digest must describe its own content.
+    for row, entry in zip(lines, out.audit_entries):
+        core = {key: row[key] for key in ("check_type", "proposal_id", "verdict", "timestamp")}
+        body = json.dumps(core, sort_keys=True, separators=(",", ":"))
+        assert hashlib.sha256(body.encode("utf-8")).hexdigest() == row["sha256"] == entry["sha256"]
 
 
 def test_compliance_ineligible_proposal_is_no_go():
@@ -480,6 +621,37 @@ def test_pipeline_runs_all_five_phases():
     export = result["results"]["export"]
     assert len(export.files) == 3
     assert result["results"]["compliance"].overall_pass is True
+
+
+def test_pipeline_stops_before_drafting_an_ineligible_application():
+    """Writing a proposal the funder rejects is work with no outcome.
+
+    The pipeline used to draft, review and export anyway and return
+    success=True for a not_eligible applicant.
+    """
+    result = run(GrantPipeline().run_full_pipeline(
+        rfp_text=RFP_TEXT,
+        profile=make_profile(career_stage="senior"),
+    ))
+    assert result["success"] is False
+    assert "not eligible" in result["error"]
+    assert "career_stage" in result["error"]
+    assert "drafting" not in result["results"]
+    assert "export" not in result["results"]
+    # The verdict must survive the refusal: the caller needs the reason.
+    assert result["eligibility"].overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_pipeline_can_proceed_when_ineligibility_is_overridden():
+    """The gate is a default, not a lock: an explicit override still runs."""
+    result = run(GrantPipeline().run_full_pipeline(
+        rfp_text=RFP_TEXT,
+        profile=make_profile(career_stage="senior"),
+        allow_ineligible=True,
+    ))
+    assert result["success"] is True, result.get("error")
+    assert "drafting" in result["results"]
+    assert result["results"]["eligibility"].assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
 
 
 # ── entry point ──────────────────────────────────────────────
