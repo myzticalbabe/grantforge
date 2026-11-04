@@ -178,6 +178,40 @@ def test_eligibility_senior_pi_fails_an_early_career_rfp():
     assert not career.requirement.startswith("search strategy")
 
 
+def test_eligibility_prior_funding_disclosure_is_not_a_bar():
+    """The fixture RFP only requires disclosure; a funded PI is still eligible."""
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=make_rfp(), profile=make_profile())))
+    funding = next(c for c in out.assessment.checks if c.category.value == "prior_funding")
+    assert funding.verdict == EligibilityVerdict.ELIGIBLE
+    assert "disclosure only, not exclusion" in funding.reason
+    assert out.assessment.overall == EligibilityVerdict.ELIGIBLE
+
+
+def test_eligibility_prior_funding_bar_rejects_a_funded_pi():
+    """Negative control: the same profile fails when the RFP forbids the funding."""
+    rfp = make_rfp(raw_text=(
+        "CONCURRENT SUPPORT RULE\n\n"
+        "Applicants must not hold concurrent funding from this program.\n"
+    ))
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=rfp, profile=make_profile())))
+    funding = next(c for c in out.assessment.checks if c.category.value == "prior_funding")
+    assert funding.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "bars" in funding.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+
+
+def test_eligibility_overlap_question_is_not_answered_by_a_grant_list():
+    """Overlap is a judgement about aims; a list of award numbers cannot make it."""
+    rfp = make_rfp(raw_text=(
+        "OVERLAP POLICY\n\n"
+        "Applications that overlap with an existing award will be returned without review.\n"
+    ))
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=rfp, profile=make_profile())))
+    funding = next(c for c in out.assessment.checks if c.category.value == "prior_funding")
+    assert funding.verdict == EligibilityVerdict.NEED_MORE_INFO
+    assert "cannot settle" in funding.reason
+
+
 def test_eligibility_reads_the_stage_the_rfp_asks_for():
     """Reverse control: the check must follow the RFP, not a hardcoded stage."""
     senior_rfp = make_rfp(raw_text=(

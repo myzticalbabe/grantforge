@@ -225,6 +225,59 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                         )
                         confidence = 0.5
 
+                # For prior funding: the sentence says whether existing awards
+                # are a bar, an overlap test, or only something to disclose. A
+                # non-empty grant list was answering all three the same way.
+                if category == CriterionCategory.PRIOR_FUNDING:
+                    stmt = (requirement_text or "").lower()
+                    barred = any(
+                        marker in stmt
+                        for marker in (
+                            "must not",
+                            "may not",
+                            "no prior",
+                            "not currently funded",
+                            "not hold",
+                            "are not eligible",
+                        )
+                    )
+                    overlap = any(
+                        marker in stmt
+                        for marker in ("overlap", "duplicate", "same aims")
+                    )
+                    disclose = any(
+                        marker in stmt
+                        for marker in ("disclose", "disclosure", "must be listed", "report")
+                    )
+                    if barred:
+                        verdict = EligibilityVerdict.NOT_ELIGIBLE
+                        reason = (
+                            "RFP bars applicants with prior or concurrent funding; "
+                            f"profile lists {profile_value}"
+                        )
+                        confidence = 0.8
+                    elif overlap:
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            "RFP tests overlap with existing awards, which a grant "
+                            f"list cannot settle (profile lists {profile_value})"
+                        )
+                        confidence = 0.5
+                    elif disclose:
+                        verdict = EligibilityVerdict.ELIGIBLE
+                        reason = (
+                            "RFP requires disclosure only, not exclusion; "
+                            f"profile lists {profile_value} for disclosure"
+                        )
+                        confidence = 0.75
+                    else:
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            "RFP mentions prior funding without stating the rule; "
+                            f"profile lists {profile_value}"
+                        )
+                        confidence = 0.5
+
                 # For career stage: compare against the stage the RFP names, not
                 # against an assumption about what funders usually want.
                 if category == CriterionCategory.CAREER_STAGE:
