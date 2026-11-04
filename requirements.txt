@@ -1,0 +1,12 @@
+# grantforge CLI runtime dependencies.
+#
+# typer>=0.16 is a hard floor, not a preference: typer 0.12.x calls
+# Parameter.make_metavar() without the ctx argument that click 8.2 requires, so
+# any parameterised command (including `--help`) dies with
+#   TypeError: Parameter.make_metavar() missing 1 required positional argument: 'ctx'
+# Nothing declared this before, so an environment could resolve typer 0.12.5 and
+# the CLI would only fail at the first subcommand.
+typer>=0.16
+click>=8.2
+pydantic>=2,<3
+rich>=13
