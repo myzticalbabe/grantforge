@@ -50,7 +50,10 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
         ],
         CriterionCategory.ESI_STATUS: [
             r"early stage investigator",
-            r"esi",
+            # Word-bounded: bare "esi" matches "r-esi-dents", so the ESI check
+            # used to fire on the citizenship sentence and quote it as evidence.
+            r"\bESI\b",
+            r"\bESI-eligible\b",
             r"new investigator",
         ],
         CriterionCategory.PRIOR_FUNDING: [
@@ -98,10 +101,21 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
         """
         patterns = self.CRITERION_PATTERNS.get(category, [])
         sentences = [s for s in re.split(r"(?<=\.)\s+|\n{2,}", rfp_text) if s.strip()]
-        for pattern in patterns:
-            for sentence in sentences:
-                if re.search(pattern, sentence, re.IGNORECASE):
-                    return " ".join(sentence.split())[:300]
+        matched = [
+            sentence
+            for sentence in sentences
+            if any(re.search(p, sentence, re.IGNORECASE) for p in patterns)
+        ]
+        # A heading such as "EARLY STAGE INVESTIGATOR AWARD" matches the same
+        # pattern as the requirement, so prefer a sentence that actually states
+        # a rule: the heading was being quoted as the eligibility criterion.
+        normative = re.compile(
+            r"\b(must|shall|required|requires|eligib\w*|applicants?|priority|preference|only)\b",
+            re.IGNORECASE,
+        )
+        if matched:
+            stated = [s for s in matched if normative.search(s)]
+            return " ".join((stated or matched)[0].split())[:300]
         # Fall back to a window only if no single sentence carries the match.
         for pattern in patterns:
             match = re.search(pattern, rfp_text, re.IGNORECASE)
@@ -173,16 +187,43 @@ class EligibilityEngine(Engine[EligibilityInput, EligibilityOutput]):
                         reason = "Citizenship status may not meet RFP requirement"
                         confidence = 0.6
 
-                # For ESI status
+                # For ESI status: a priority is not a requirement. "ESI-eligible
+                # PIs receive priority" marked a non-ESI PI not_eligible, which
+                # silently kills an application the funder invites.
                 if category == CriterionCategory.ESI_STATUS:
+                    stmt = (requirement_text or "").lower()
+                    soft = any(
+                        marker in stmt
+                        for marker in ("priority", "preference", "preferred", "encouraged")
+                    )
+                    hard = any(
+                        marker in stmt
+                        for marker in ("must be", "required", "only", "eligibility requires")
+                    )
                     if profile_value is True:
                         verdict = EligibilityVerdict.ELIGIBLE
-                        reason = "ESI eligible - meets early stage investigator requirement"
+                        reason = "ESI eligible - meets early stage investigator criterion"
                         confidence = 0.9
-                    else:
+                    elif soft and not hard:
+                        verdict = EligibilityVerdict.ELIGIBLE
+                        reason = (
+                            "ESI status is stated as a priority, not a requirement; "
+                            "profile is not ESI-eligible and may rank lower"
+                        )
+                        confidence = 0.6
+                    elif hard:
                         verdict = EligibilityVerdict.NOT_ELIGIBLE
-                        reason = "Not ESI eligible - does not meet early stage investigator requirement"
+                        reason = (
+                            "RFP requires ESI status; profile is not ESI-eligible"
+                        )
                         confidence = 0.8
+                    else:
+                        verdict = EligibilityVerdict.NEED_MORE_INFO
+                        reason = (
+                            "RFP mentions ESI without stating whether it is required; "
+                            "profile is not ESI-eligible"
+                        )
+                        confidence = 0.5
 
                 # For career stage: compare against the stage the RFP names, not
                 # against an assumption about what funders usually want.

@@ -127,13 +127,35 @@ def test_eligibility_missing_citizenship_needs_info():
     assert "citizenship" in out.missing_criteria
 
 
-def test_eligibility_non_esi_is_not_eligible():
-    """Negative control: the fixture flips ESI off and the overall verdict must flip."""
+def test_eligibility_esi_priority_does_not_make_a_pi_ineligible():
+    """"ESI-eligible PIs receive priority" is a tie-break, not an eligibility gate."""
     profile = make_profile(esi_eligible=False)
     out = run(EligibilityEngine().run(EligibilityInput(rfp=make_rfp(), profile=profile)))
-    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
+    esi = next(c for c in out.assessment.checks if c.category.value == "esi_status")
+    assert esi.verdict == EligibilityVerdict.ELIGIBLE
+    assert "priority" in esi.reason
+    assert out.assessment.overall == EligibilityVerdict.ELIGIBLE
+
+    # Evidence must come from the ESI sentence. The pattern was bare "esi",
+    # which matches "r-esi-dents", so this check used to quote the citizenship
+    # requirement as the ESI requirement.
+    assert esi.requirement.startswith("ESI-eligible PIs receive priority")
+    assert "residents" not in esi.requirement
+
+
+def test_eligibility_esi_requirement_rejects_a_non_esi_pi():
+    """Negative control: the same non-ESI profile fails when ESI is required."""
+    rfp = make_rfp(raw_text=(
+        "EARLY STAGE INVESTIGATOR AWARD\n\n"
+        "Applicants must be early career investigators.\n\n"
+        "Applicants must be ESI-eligible at the time of application.\n"
+    ))
+    profile = make_profile(esi_eligible=False)
+    out = run(EligibilityEngine().run(EligibilityInput(rfp=rfp, profile=profile)))
     esi = next(c for c in out.assessment.checks if c.category.value == "esi_status")
     assert esi.verdict == EligibilityVerdict.NOT_ELIGIBLE
+    assert "requires ESI" in esi.reason
+    assert out.assessment.overall == EligibilityVerdict.NOT_ELIGIBLE
 
 
 def test_eligibility_senior_pi_fails_an_early_career_rfp():
