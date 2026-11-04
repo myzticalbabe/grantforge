@@ -38,8 +38,19 @@ class Engine(ABC, Generic[InputT, OutputT]):
         ...
 
     async def validate_input(self, input: InputT) -> bool:
-        """Optional input validation hook."""
+        """Input validation hook, run by ``run`` before every execution."""
         return True
+
+    async def run(self, input: InputT) -> OutputT:
+        """Validate, then execute. The entry point callers should use.
+
+        ``execute`` stays public for subclasses and tests, but going through
+        ``run`` is what makes the validation hook part of the call path instead
+        of a method nothing reaches.
+        """
+        if not await self.validate_input(input):
+            raise ValueError(f"{self.name}: input rejected by validate_input")
+        return await self.execute(input)
 
     async def health_check(self) -> dict[str, Any]:
         """Health check for monitoring."""

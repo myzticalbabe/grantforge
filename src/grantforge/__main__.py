@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.table import Table
 
 from grantforge import (
+    __version__,
     DiscoveryEngine,
     EligibilityEngine,
     DraftingEngine,
@@ -97,19 +98,19 @@ def discover(
     
     if rfp_file:
         text = rfp_file.read_text(encoding="utf-8")
-        result = asyncio.run(engine.execute(
+        result = asyncio.run(engine.run(
             engine.__annotations__["execute"].__args__[0](
                 rfp_text=text, top_k=top_k
             )
         ))
     elif funder_ein:
-        result = asyncio.run(engine.execute(
+        result = asyncio.run(engine.run(
             engine.__annotations__["execute"].__args__[0](
                 funder_ein=funder_ein
             )
         ))
     elif query:
-        result = asyncio.run(engine.execute(
+        result = asyncio.run(engine.run(
             engine.__annotations__["execute"].__args__[0](
                 query=query, top_k=top_k
             )
@@ -137,7 +138,7 @@ def assess(
     rfp = RFP.model_validate_json(rfp_file.read_text())
     profile = Profile.model_validate_json(profile_file.read_text())
     
-    result = asyncio.run(engine.execute(
+    result = asyncio.run(engine.run(
         engine.__annotations__["execute"].__args__[0](rfp=rfp, profile=profile)
     ))
     
@@ -179,7 +180,7 @@ def draft(
     profile = Profile.model_validate_json(profile_file.read_text())
     proposal = Proposal.model_validate_json(proposal_file.read_text()) if proposal_file else None
     
-    result = asyncio.run(engine.execute(
+    result = asyncio.run(engine.run(
         engine.__annotations__["execute"].__args__[0](
             rfp=rfp,
             profile=profile,
@@ -212,7 +213,7 @@ def review(
     proposal = Proposal.model_validate_json(proposal_file.read_text())
     profile = Profile.model_validate_json(profile_file.read_text())
     
-    result = asyncio.run(engine.execute(
+    result = asyncio.run(engine.run(
         engine.__annotations__["execute"].__args__[0](
             proposal=proposal,
             pi_profile=profile,
@@ -253,7 +254,7 @@ def collaborate(
     
     proposal = Proposal.model_validate_json(proposal_file.read_text())
     
-    result = asyncio.run(engine.execute(
+    result = asyncio.run(engine.run(
         engine.__annotations__["execute"].__args__[0](
             proposal=proposal,
             action=action,
@@ -290,7 +291,7 @@ def export(
     
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    result = asyncio.run(engine.execute(
+    result = asyncio.run(engine.run(
         engine.__annotations__["execute"].__args__[0](
             proposal=proposal,
             pi_profile=profile,
@@ -351,7 +352,6 @@ def health():
 @app.command()
 def version():
     """Show grantforge version."""
-    from grantforge import __version__
     console.print(f"grantforge v{__version__}")
 
 
