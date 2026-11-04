@@ -96,6 +96,9 @@ class GrantPipeline:
         draft_input = DraftingInput(rfp=rfp, profile=profile)
         draft_result = await self.drafting.run(draft_input)
         results["drafting"] = draft_result
+        # What kind of draft this is, so a caller does not read success=True as
+        # "submission ready": the composer labels its output a scaffold.
+        draft_kind = (draft_result.metadata or {}).get("draft_kind")
 
         proposal = draft_result.proposal
         if proposal is None:
@@ -147,12 +150,14 @@ class GrantPipeline:
                 "success": False,
                 "error": "; ".join(problems),
                 "proposal": proposal,
+                "draft_kind": draft_kind,
                 "results": results,
             }
 
         return {
             "success": True,
             "proposal": proposal,
+            "draft_kind": draft_kind,
             "results": results,
         }
 
