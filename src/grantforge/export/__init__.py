@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 from datetime import datetime
 from io import BytesIO
+import textwrap
 import zipfile
 from xml.sax.saxutils import escape
 
@@ -172,13 +173,102 @@ class ExportEngine(Engine[ExportInput, ExportOutput]):
             doc.build(story)
             return buffer.getvalue()
 
-        # Fallback: generate minimal PDF manually
-        content = f"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
-        content += f"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
-        content += f"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
-        content += f"xref\n0 4\n0000000000 65535 f \n"
-        content += f"trailer\n<< /Size 4 /Root 1 0 R >>\nstartxref\n0\n%%EOF\n"
-        return content.encode()
+        return self._minimal_pdf(input)
+
+    # Lines per page at 11pt with 14pt leading inside 648pt of text height.
+    PDF_LINES_PER_PAGE = 44
+    PDF_WRAP_COLUMNS = 95
+
+    @staticmethod
+    def _pdf_string(text: str) -> str:
+        """A PDF literal string: latin-1 safe, backslashes and parens escaped."""
+        safe = str(text).encode("latin-1", "replace").decode("latin-1")
+        return safe.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+    def _pdf_lines(self, input: ExportInput) -> list[tuple[str, bool, int]]:
+        """(text, bold, size) for every line the document must carry."""
+        lines: list[tuple[str, bool, int]] = [
+            (input.proposal.title, True, 16),
+            ("", False, 11),
+            (f"PI: {input.pi_profile.name}", False, 11),
+            (f"Institution: {input.pi_profile.institution}", False, 11),
+            (f"Funder: {input.rfp.funder_id}", False, 11),
+            (self._deadline_line(input), False, 11),
+            ("", False, 11),
+        ]
+        for _section_id, section in input.proposal.sections.items():
+            lines.append((section.title, True, 13))
+            wrapped = textwrap.wrap(
+                " ".join(str(section.content).split()), self.PDF_WRAP_COLUMNS
+            ) or [""]
+            lines.extend((line, False, 11) for line in wrapped)
+            lines.append(("", False, 11))
+        return lines
+
+    def _minimal_pdf(self, input: ExportInput) -> bytes:
+        """A real PDF built without reportlab, carrying the proposal's text.
+
+        The previous fallback wrote a well-formed PDF with one page object and
+        **no content stream at all**: valid bytes, zero words, exported as
+        ``<proposal>_proposal.pdf`` with success=True. Word and Excel already had
+        real fallbacks for the interpreters that lack their renderer; this is the
+        same treatment for PDF. reportlab is not in grantforge's requirements, so
+        this path ships wherever the bundle is built on a clean install.
+        """
+        lines = self._pdf_lines(input)
+        pages: list[bytes] = []
+        for start in range(0, len(lines), self.PDF_LINES_PER_PAGE):
+            chunk = lines[start:start + self.PDF_LINES_PER_PAGE]
+            ops = ["BT", "1 0 0 1 72 720 Tm"]
+            for text, bold, size in chunk:
+                font = "/F2" if bold else "/F1"
+                ops.append(f"{font} {size} Tf 0 -{size + 4} Td")
+                if text:
+                    ops.append(f"({self._pdf_string(text)}) Tj")
+            ops.append("ET")
+            pages.append("\n".join(ops).encode("latin-1"))
+        if not pages:
+            pages.append(b"BT /F1 11 Tf 72 720 Td (empty proposal) Tj ET")
+
+        # Objects: 1 catalog, 2 pages tree, 3-4 fonts, then (stream, page) pairs.
+        objects: dict[int, bytes] = {
+            1: b"<< /Type /Catalog /Pages 2 0 R >>",
+            3: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+            4: b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+        }
+        kids = []
+        for index, content in enumerate(pages):
+            page_obj = 5 + 2 * index + 1
+            kids.append(f"{page_obj} 0 R")
+            objects[page_obj - 1] = (
+                f"<< /Length {len(content)} >>\nstream\n".encode("ascii")
+                + content
+                + b"\nendstream"
+            )
+            objects[page_obj] = (
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                "/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> "
+                f"/Contents {page_obj - 1} 0 R >>"
+            ).encode("ascii")
+        objects[2] = (
+            f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(pages)} >>"
+        ).encode("ascii")
+
+        out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
+        offsets: dict[int, int] = {}
+        for number in sorted(objects):
+            offsets[number] = len(out)
+            out += f"{number} 0 obj\n".encode("ascii") + objects[number] + b"\nendobj\n"
+        xref_at = len(out)
+        count = len(objects) + 1
+        out += f"xref\n0 {count}\n".encode("ascii")
+        out += b"0000000000 65535 f \n"
+        for number in sorted(objects):
+            out += f"{offsets[number]:010d} 00000 n \n".encode("ascii")
+        out += (
+            f"trailer\n<< /Size {count} /Root 1 0 R >>\nstartxref\n{xref_at}\n%%EOF\n"
+        ).encode("ascii")
+        return bytes(out)
 
     async def _render_word(self, input: ExportInput) -> bytes:
         """Render proposal to Word using python-docx if available."""

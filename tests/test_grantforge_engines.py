@@ -18,6 +18,8 @@ import re
 import subprocess
 import sys
 import zipfile
+
+import pytest
 from datetime import datetime, timezone
 from io import BytesIO
 
@@ -39,6 +41,7 @@ from grantforge.discovery import DiscoveryEngine, DiscoveryInput  # noqa: E402
 from grantforge.drafting import DraftingEngine, DraftingInput  # noqa: E402
 from grantforge.eligibility import EligibilityEngine, EligibilityInput  # noqa: E402
 from grantforge.engine import Engine, EngineInput, EngineOutput  # noqa: E402
+from grantforge import export as export_module  # noqa: E402
 from grantforge.export import ExportEngine, ExportInput  # noqa: E402
 from grantforge.pipeline import GrantPipeline  # noqa: E402
 from grantforge.schemas import (  # noqa: E402
@@ -757,6 +760,26 @@ def _assert_excel_package(payload: bytes) -> None:
     assert "Personnel" in text and "Indirect Costs" in text
 
 
+def _assert_pdf_carries_text(payload: bytes, title: str, section_title: str) -> None:
+    """A PDF that opens is not a PDF that says anything.
+
+    The fallback used to emit a catalog, one page object and no content stream: a
+    valid file with zero words, exported as the proposal. Assert the page has
+    contents and that a reader can extract the title and a section heading.
+    """
+    assert payload.startswith(b"%PDF-1.4")
+    assert b"/Type /Page " in payload
+    assert b"/Contents" in payload and b"stream" in payload
+    assert b"startxref" in payload
+
+    pypdf = pytest.importorskip("pypdf")
+    reader = pypdf.PdfReader(BytesIO(payload))
+    assert len(reader.pages) >= 1
+    text = "\n".join(page.extract_text() or "" for page in reader.pages)
+    assert title in text, text[:200]
+    assert section_title in text, text[:200]
+
+
 def test_export_budget_does_not_report_zero_dollars_as_an_amount():
     """An unfilled budget is blank, and says so, instead of claiming $0.
 
@@ -842,9 +865,27 @@ def test_export_fallback_produces_valid_office_packages(monkeypatch):
         "prop_cardiac_01_proposal.docx",
         "prop_cardiac_01_budget.xlsx",
     ]
-    assert out.files["prop_cardiac_01_proposal.pdf"].startswith(b"%PDF")
+    section_title = next(iter(proposal.sections.values())).title
+    _assert_pdf_carries_text(
+        out.files["prop_cardiac_01_proposal.pdf"], proposal.title, section_title
+    )
     _assert_word_package(out.files["prop_cardiac_01_proposal.docx"], proposal.title)
     _assert_excel_package(out.files["prop_cardiac_01_budget.xlsx"])
+
+
+def test_export_pdf_fallback_paginates_a_longer_proposal(monkeypatch):
+    """More text than one page holds must produce more than one page object."""
+    monkeypatch.setattr(export_module, "SimpleDocTemplate", None)
+    proposal = make_proposal()
+    for section in proposal.sections.values():
+        section.content = " ".join([section.content] * 40)
+    out = run(ExportEngine().run(ExportInput(
+        proposal=proposal, pi_profile=make_profile(), rfp=make_rfp(),
+        formats=[ExportFormat.PDF],
+    )))
+    payload = out.files["prop_cardiac_01_proposal.pdf"]
+    pypdf = pytest.importorskip("pypdf")
+    assert len(pypdf.PdfReader(BytesIO(payload)).pages) > 1
 
 
 def test_export_single_format_only():
