@@ -1,0 +1,96 @@
+# grantforge Nuitka build configuration
+# Usage: python -m nuitka --module-config=grantforge.nuitka.toml grantforge.__main__
+
+[build]
+# Output
+output_dir = "dist"
+output_filename = "grantforge.exe"
+
+# Mode
+standalone = true
+onefile = true
+assume_yes_for_downloads = true
+
+# Plugins
+enable_plugins = [
+    "playwright",
+    "transformers",
+    "pydantic",
+    "numpy",
+    "torch",
+    "openvino",
+    "pkg_resources",
+]
+
+# Include packages (recursive)
+include_packages = [
+    "grantforge",
+    "grantforge.discovery",
+    "grantforge.eligibility",
+    "grantforge.drafting",
+    "grantforge.compliance",
+    "grantforge.collaboration",
+    "grantforge.export",
+    "grantforge.schemas",
+    "grantforge.engine",
+    # Dependencies
+    "pydantic",
+    "pydantic_core",
+    "typer",
+    "rich",
+    "numpy",
+    "openvino",
+    "transformers",
+    "sentence_transformers",
+    "torch",
+    "llama_cpp",
+    "marker",
+    "unstructured",
+    "reportlab",
+    "docx",
+    "openpyxl",
+    "playwright",
+    "httpx",
+    "aiofiles",
+    "sqlite3",
+    "json",
+    "uuid",
+    "datetime",
+    "pathlib",
+    "typing",
+    "dataclasses",
+    "enum",
+    "asyncio",
+    "concurrent.futures",
+]
+
+# Include data files
+include_data_files = {
+    # Playwright browsers (will be downloaded at runtime, but we can pre-bundle)
+    # "playwright/.local-browsers/**": "playwright/.local-browsers/",
+    # OpenVINO models (if any local)
+    # "models/**": "models/",
+}
+
+# Windows specific
+windows_icon_from_ico = "assets/grantforge.ico"
+windows_company_name = "Azazael"
+windows_product_name = "grantforge"
+windows_file_version = "2.0.0"
+windows_product_version = "2.0.0"
+
+# Optimization
+lto = "yes"  # Link-time optimization
+jobs = 8  # Parallel compilation
+
+# Suppress warnings
+warn_unused_code = false
+warn_implicit_except = false
+
+# Debug
+debug = false
+trace_execution = false
+
+# Custom hooks
+# pre_module = "grantforge.nuitka_hook:pre_module"
+# post_module = "grantforge.nuitka_hook:post_module"

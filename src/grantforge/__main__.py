@@ -23,13 +23,19 @@ from grantforge import (
     ExportEngine,
 )
 from grantforge.schemas import (
-    Profile, RFP, Funder, Proposal, 
+    Profile, RFP, Funder, Proposal,
     FunderType, GrantMechanism, ExportFormat
 )
+from grantforge.discovery import DiscoveryInput
+from grantforge.eligibility import EligibilityInput
+from grantforge.drafting import DraftingInput
+from grantforge.compliance import ComplianceInput
+from grantforge.collaboration import CollaborationInput
+from grantforge.export import ExportInput
 
 app = typer.Typer(
     name="grantforge",
-    help="AI-native grant tooling: discover → assess → draft → review → collaborate → export → submit",
+    help="AI-native grant tooling: discover -> assess -> draft -> review -> collaborate -> export -> submit",
     rich_markup_mode="rich",
 )
 console = Console()
@@ -98,23 +104,17 @@ def discover(
     
     if rfp_file:
         text = rfp_file.read_text(encoding="utf-8")
-        result = asyncio.run(engine.run(
-            engine.__annotations__["execute"].__args__[0](
-                rfp_text=text, top_k=top_k
-            )
-        ))
+        result = asyncio.run(engine.run(DiscoveryInput(
+            rfp_text=text, top_k=top_k
+        )))
     elif funder_ein:
-        result = asyncio.run(engine.run(
-            engine.__annotations__["execute"].__args__[0](
-                funder_ein=funder_ein
-            )
-        ))
+        result = asyncio.run(engine.run(DiscoveryInput(
+            funder_ein=funder_ein
+        )))
     elif query:
-        result = asyncio.run(engine.run(
-            engine.__annotations__["execute"].__args__[0](
-                query=query, top_k=top_k
-            )
-        ))
+        result = asyncio.run(engine.run(DiscoveryInput(
+            query=query, top_k=top_k
+        )))
     else:
         console.print("[red]Provide --rfp, --funder, or a search query[/red]")
         raise typer.Exit(1)
@@ -138,9 +138,7 @@ def assess(
     rfp = RFP.model_validate_json(rfp_file.read_text())
     profile = Profile.model_validate_json(profile_file.read_text())
     
-    result = asyncio.run(engine.run(
-        engine.__annotations__["execute"].__args__[0](rfp=rfp, profile=profile)
-    ))
+    result = asyncio.run(engine.run(EligibilityInput(rfp=rfp, profile=profile)))
     
     if output:
         output.write_text(result.model_dump_json(indent=2))
@@ -180,15 +178,13 @@ def draft(
     profile = Profile.model_validate_json(profile_file.read_text())
     proposal = Proposal.model_validate_json(proposal_file.read_text()) if proposal_file else None
     
-    result = asyncio.run(engine.run(
-        engine.__annotations__["execute"].__args__[0](
-            rfp=rfp,
-            profile=profile,
-            proposal=proposal,
-            section_id=section,
-            instruction=instruction,
-        )
-    ))
+    result = asyncio.run(engine.run(DraftingInput(
+        rfp=rfp,
+        profile=profile,
+        proposal=proposal,
+        section_id=section,
+        instruction=instruction,
+    )))
     
     if output and result.proposal:
         output.write_text(result.proposal.model_dump_json(indent=2))
@@ -213,13 +209,11 @@ def review(
     proposal = Proposal.model_validate_json(proposal_file.read_text())
     profile = Profile.model_validate_json(profile_file.read_text())
     
-    result = asyncio.run(engine.run(
-        engine.__annotations__["execute"].__args__[0](
-            proposal=proposal,
-            pi_profile=profile,
-            check_types=checks,
-        )
-    ))
+    result = asyncio.run(engine.run(ComplianceInput(
+        proposal=proposal,
+        pi_profile=profile,
+        check_types=checks,
+    )))
     
     if output:
         output.write_text(result.model_dump_json(indent=2))
@@ -254,17 +248,15 @@ def collaborate(
     
     proposal = Proposal.model_validate_json(proposal_file.read_text())
     
-    result = asyncio.run(engine.run(
-        engine.__annotations__["execute"].__args__[0](
-            proposal=proposal,
-            action=action,
-            user_id=user,
-            section_id=section,
-            content=content,
-            target_user=target,
-            position=position,
-        )
-    ))
+    result = asyncio.run(engine.run(CollaborationInput(
+        proposal=proposal,
+        action=action,
+        user_id=user,
+        section_id=section,
+        content=content,
+        target_user=target,
+        position=position,
+    )))
     
     if output and result.proposal:
         output.write_text(result.proposal.model_dump_json(indent=2))
@@ -291,15 +283,13 @@ def export(
     
     out_dir.mkdir(parents=True, exist_ok=True)
     
-    result = asyncio.run(engine.run(
-        engine.__annotations__["execute"].__args__[0](
-            proposal=proposal,
-            pi_profile=profile,
-            rfp=rfp,
-            formats=formats,
-            funder_template=template,
-        )
-    ))
+    result = asyncio.run(engine.run(ExportInput(
+        proposal=proposal,
+        pi_profile=profile,
+        rfp=rfp,
+        formats=formats,
+        funder_template=template,
+    )))
     
     if result.bundle:
         # Write all files

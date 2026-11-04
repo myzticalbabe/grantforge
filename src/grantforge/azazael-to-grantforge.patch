@@ -1,0 +1,692 @@
+diff --git a/README.md b/README.md
+index 3cd871a6..33ad9166 100644
+--- a/README.md
++++ b/README.md
+@@ -1,374 +1,215 @@
+-# AZAZAEL — Self-Replicating AI Worm Ecosystem
++# grantforge — AI-Native Grant Tooling (Scribe v2)
+ 
+-**Version:** 1.0.0 | **Python:** 3.15t (free-threaded, `C:\Azazael\.venvs\py315t`) — 3.14t retired 2026-10-19 | **Platform:** Windows 64-bit | **Status:** Beta
++**Single binary. Zero dependencies. NPU-accelerated. Dual-model consensus.**
+ 
+-**This repository is the Trunk.** Azazael is the Tree-of-Life the other packages grow from: `Project ELIZA` is the forensic investigation suite, `Project Nurse Ratchet` is the behavioral package, and both are declared in [`docs/AZAZAEL_TREE_OF_LIFE.md`](docs/AZAZAEL_TREE_OF_LIFE.md). The reference build is tuned to **this box** (Intel Core Ultra 9 285H / Arc 140T, Windows, 3.15t) — to fit a different machine, start at [`docs/platforms/README.md`](docs/platforms/README.md) and run `python tools/box_profile.py` before changing anything.
++```
++grantforge discover "NSF early career quantum computing"
++grantforge assess rfp.json profile.json
++grantforge draft rfp.json profile.json --output proposal.json
++grantforge review proposal.json profile.json
++grantforge collaborate proposal.json edit --user alice --section methods --content "We propose..."
++grantforge export proposal.json profile.json rpf.json --format pdf,docx,xlsx
++```
+ 
+-**PROJECT CRADLE** — the cradle that holds a user's work and hands it to the model they already run — ships beside the trunk: FLAMING SWORD (the codebase sweeper), the defender (a user prompt becomes a frame), **THE REAPER** (the sentinel: a frame whose claims do not resolve is taken out of play, not watched), and **THE GRIMOIRE** (the memory: the book a failed verification writes, recalled by the next frame or reported UNMEMORED with its reason), behind three commands that need no build, no key and no network: `python Project_CRADLE/cradle.py --doctor` / `--demo` / `--serve --model-url <openai-compatible>`. Start at [`Project_CRADLE/CRADLE.md`](Project_CRADLE/CRADLE.md).
++---
+ 
+-Azazael is an autonomous system administration framework built on a **worm ecosystem** — self-contained, self-registering modules that discover, monitor, analyze, and heal computing environments. Built for free-threaded Python — 3.15t in production, with a same-version GIL sidecar for comparison — Azazael achieves true parallel execution across CPU, GPU, and NPU devices without the Global Interpreter Lock. (3.14t was retired on 2026-10-19; see `SYSTEM_INSTRUCTIONS.md` → INTERPRETER POLICY.)
++## What It Does
++
++| Command | Purpose | AI Capability |
++|---------|---------|---------------|
++| `discover` | Semantic funding search, RFP ingestion, funder 990 intel, auto-profiles | mxbai-embed-large-v1 on **NPU** (5.7x faster than CPU) |
++| `assess` | Full eligibility verdict per criterion (career stage, citizenship, ESI, prior funding, mechanism limits) | Structured extraction + profile matching |
++| `draft` | Checklist-driven section drafting, content library, style guide enforcement, inline AI, voice learning | **Dual-model consensus** (gemma4 reasoning + qwen3 code) |
++| `review` | Compliance checks via supervisor_verdict fanout (PMB + Engram + PAMS), DLV dual-ledger audit trail | Multi-memory consensus |
++| `collaborate` | Real-time co-editing (Operational Transform), anchor comments, SME info requests, kanban pipeline | Conflict-free collaborative editing |
++| `export` | Funder-specific templates (NIH/NSF/DOE/Foundation) → PDF/Word/Excel + complete submission bundle | One-click formatted output |
+ 
+ ---
+ 
+ ## Architecture
+ 
+ ```
+-azazael/
+-├── src/
+-│   ├── CORE/                  # Foundation layer
+-│   │   ├── worm_registry.py   # Central registry + auto-discovery + spawn engine
+-│   │   ├── Agent.py           # FreeThreadedAgent base class
+-│   │   ├── freethreading.py   # Free-threaded primitives (pools, queues, counters)
+-│   │   ├── config.py          # Hierarchical configuration
+-│   │   ├── MemoryBus.py       # Inter-agent message bus
+-│   │   ├── PamsRecorder.py    # Persistent AI memory recording
+-│   │   ├── local_memory.py    # SQLite-backed local persistent store
+-│   │   ├── circuit_breaker.py # Circuit breaker + dead-letter queue
+-│   │   ├── compliance_auditor.py # Governance and compliance
+-│   │   ├── worm_governance.py # Naming, dedup, lifecycle management
+-│   │   ├── secrets_manager.py # Thread-safe secret rotation
+-│   │   ├── threading_utils.py # Atomic counters, snapshot dicts
+-│   │   ├── metrics.py         # Metrics collection + health checks
+-│   │   ├── workflow.py        # Workflow engine with conditional routing
+-│   │   ├── web_dashboard.py   # Real-time web monitoring dashboard
+-│   │   ├── health_server.py   # Prometheus + health endpoint server
+-│   │   ├── dashboard.py       # CLI dashboard
+-│   │   ├── NeuralPipeline.py  # ML/NLP analysis pipeline
+-│   │   ├── sb3_agent.py       # Stable-Baselines3 reinforcement learning agent
+-│   │   ├── AgentPool.py       # Pool of FreeThreadedAgent workers
+-│   │   ├── error_triage.py    # Error categorization and triage system
+-│   │   ├── direct_memory.py   # Direct session memory (JSON)
+-│   │   ├── notifier.py        # Webhook-based notifications
+-│   │   ├── enforcement_harness.py # Compliance enforcement
+-│   │   ├── STRUCTURE.py       # Module structure definitions
+-│   │   ├── STRESS_TEST.py     # System stress testing
+-│   │   ├── PYTHON_MANAGER.py  # Python version/environment manager
+-│   │   ├── NODE.py            # Node-level orchestrator
+-│   │   ├── FREETHREAD_UPGRADE.py # Legacy free-thread utilities
+-│   │   ├── FreeThreadedAgent.py # Legacy agent base (alias)
+-│   │   └── WORMS/             # ~80+ worm modules (auto-discovered)
+-│   ├── ORCHESTRATION/         # System orchestration layer
+-│   │   ├── HYDRA.py           # Multi-headed orchestration
+-│   │   ├── HYDRA_ANALYZER.py  # Orchestration analysis
+-│   │   ├── TARBABY.py         # File system discovery and migration
+-│   │   ├── HORUS.py           # System monitoring
+-│   │   ├── ECOSYSTEM_CRAWLER_LAUNCHER.py  # Ecosystem discovery
+-│   │   ├── ECOSYSTEM_OPTIMIZER.py         # Ecosystem optimization
+-│   │   └── ml_platforms/      # ML platform integrations (OpenVINO, LM Studio, etc.)
+-│   ├── INTERPRETERS/          # Cross-language runners (Go, Rust)
+-│   ├── SHORTCUTS/             # Batch file launchers
+-│   ├── SCRIPTS/               # Environment setup, LSP, sentinel gate
+-│   ├── TOOLS/                 # Utility tools
+-│   ├── UTILITIES/
+-│   │   ├── TARBABY/           # File migration tools
+-│   │   ├── TERENCE/           # Code analysis
+-│   │   ├── KLINK/             # Cross-platform wrappers
+-│   │   ├── PERSEPHONE/        # WSL sync manager
+-│   │   └── POINDEXTER/        # Codebase indexing
+-│   ├── META/                  # Meta-worm spawning and reporting
+-│   └── tests/                 # 45+ test files
+-├── docs/                      # Architecture, specs, conversion plans
+-├── config/                    # YAML/JSON configuration
+-├── data/                      # Runtime data, PAMS events, fleet dashboards
+-├── templates/                 # HTML, Mermaid, video templates
+-└── tests/                     # Integration and unit tests
++grantforge.exe (Nuitka single binary ~200MB)
++├── grantforge/
++│   ├── discovery/      # NPU embeddings, RFP parsing, funder 990s, auto-profiles
++│   ├── eligibility/    # Criterion extraction, per-criterion verdicts
++│   ├── drafting/       # Checklist → sections → library → inline AI → voice
++│   ├── compliance/     # supervisor_verdict fanout + DLV audit
++│   ├── collaboration/  # OT co-editing, comments, requests, kanban
++│   └── export/         # NIH/NSF/DOE templates → PDF/Word/Excel
++├── llama-server/
++│   ├── ov_embed_server.py   # NPU mxbai embeddings (OpenVINO)
++│   ├── codegraph_mcp.py     # Tree-sitter codegraph tools
++│   └── executor.py          # Unified EngineExecutor plugins
++└── DirectMemory/            # Session recording + PMB/Engram/PAMS bridge
+ ```
+ 
+-### Key Concepts
++---
+ 
+-**Worms** are self-registering Python classes that each perform a specific system administration task. They auto-discover via `@register_worm` decorator or directory scanning, and are coordinated by the `SpawnDiversityEngine` for balanced, non-overlapping execution.
++## Hardware Requirements
+ 
+-**Agents** are `FreeThreadedAgent` subclasses that run tasks in parallel using free-threaded thread pools. They feature automatic PAMS memory recording, inter-agent messaging via `MemoryBus`, and hierarchical sub-agent spawning.
++| Component | Minimum | Recommended |
++|-----------|---------|-------------|
++| CPU | 8 cores | 16+ cores (free-threaded Python 3.14t) |
++| RAM | 16 GB | 32+ GB |
++| NPU | Intel AI Boost / Arc 140T | Intel Core Ultra (NPU 40+ TOPS) |
++| GPU | Optional (OpenVINO GPU fallback) | Arc 140T / discrete for fallback |
++| Storage | 5 GB | 20+ GB (models + cache) |
+ 
+-| Concept | Description |
+-|---------|-------------|
+-| **Worm Registry** | Central `WORM_REGISTRY` dict with auto-discovery, pickle caching for sub-second startup |
+-| **SpawnDiversityEngine** | Category rotation, cooldown enforcement, time-based patterns, fleet-aware selection |
+-| **FreeThreadPool** | Auto-sized `ThreadPoolExecutor` for no-GIL parallelism |
+-| **WorkStealingPool** | Load-balanced thread pool with work-stealing across per-worker queues |
+-| **MemoryBus** | Topic-based pub/sub messaging between agents (optional PAMS persistence) |
+-| **PAMS Recorder** | Persistent AI Memory System — records events to SQLite/HTTP |
+-| **Circuit Breaker** | Failure isolation with dead-letter queue, configurable thresholds |
+-| **Compliance Auditor** | Governance enforcement with structured compliance checking |
++**NPU required for mxbai embeddings at speed.** CPU fallback: 4.7 chunks/s vs NPU 26.9 chunks/s.
+ 
+ ---
+ 
+ ## Installation
+ 
+-### Requirements
+-- **Python 3.14t** (free-threaded build) — *required, no other Python version supported*
+-- Windows 10/11 64-bit
+-- `psutil` (auto-installed)
++### Windows (Pre-built)
++```powershell
++# Download grantforge.exe from releases
++# Run directly - no install needed
++grantforge.exe discover "your query"
++```
+ 
++### From Source (Python 3.14t free-threaded)
+ ```bash
+-# 1. Verify Python 3.14t free-threading
+-python --version                    # Must be 3.14.x
+-python -c "import sys; print('Free-threaded:', hasattr(sys, '_is_gil_enabled') and not sys._is_gil_enabled())"
+-# Must print: Free-threaded: True
+-
+-# 2. Clone and install
+-git clone <repo-url>
+-cd azazael
+-pip install -e .
+-
+-# 3. Verify installation
+-python -c "from CORE.worm_registry import discover_worms; print(f'Discovered: {discover_worms()} worms')"
+-```
++# Requires Python 3.14t free-threaded
++git clone https://github.com/azazael/grantforge
++cd grantforge
++pip install -e ".[dev]"
+ 
+-### Optional Dependencies
+-| Package | Purpose |
+-|---------|---------|
+-| `openvino` | GPU/NPU accelerated inference |
+-| `torch` (CPU) | ML/AI worm training |
+-| `stable-baselines3` | Reinforcement learning agents |
+-| `lm-studio` / `ollama` | Local LLM integration |
++# Install Playwright browsers
++playwright install chromium
++
++# Build single binary
++python -m nuitka --module-config=grantforge.nuitka.toml grantforge.__main__
++```
+ 
+ ---
+ 
+ ## Quick Start
+ 
+-### Launch the System
+ ```bash
+-# Option 1: Run the observability dashboard (monitoring UI)
+-azazael-observability --port 18420
+-# Opens: http://localhost:18420
+-
+-# Option 2: Run the full orchestrator
+-python -c "
+-from CORE.NODE import AzazaelNode
+-node = AzazaelNode()
+-node.run()
+-"
+-
+-# Option 3: Discover and spawn worms interactively
+-python -c "
+-from CORE.worm_registry import discover_worms, SpawnDiversityEngine
+-count = discover_worms()
+-engine = SpawnDiversityEngine()
+-pick = engine.pick_next_spawn()
+-print(f'Ready: {count} worms | Next spawn: {pick}')
+-"
+-```
++# 1. Start NPU embedding server (separate terminal)
++python -m llama_server.unified.ov_embed_server --device NPU --port 18083
+ 
+-### Discover and Run Worms
+-```python
+-from CORE.worm_registry import discover_worms, WORM_REGISTRY, SpawnDiversityEngine
++# 2. Discover opportunities
++grantforge discover "NIH R01 early career cancer immunotherapy" --top 5 --output results.json
+ 
+-# Auto-discover all worm modules (first run: ~40s cold, then <0.2s with cache)
+-count = discover_worms()
+-print(f"Found {count} worms in {len(WORM_REGISTRY)} total")
++# 3. Ingest an RFP
++grantforge discover --rfp nih_rfa.pdf --output rfp.json
+ 
+-# Use the spawn engine to pick the best worm to run
+-engine = SpawnDiversityEngine()
+-next_worm = engine.pick_next_spawn()
+-print(f"Recommended: {next_worm['type']} ({next_worm['reason']})")
+-```
++# 4. Build your profile (auto from ORCID)
++grantforge discover --profile orcid:0000-0000-0000-0000 --output profile.json
+ 
+-### Create a Custom Agent
+-```python
+-from CORE.Agent import FreeThreadedAgent, AgentConfig, FreeThreadPool
++# 5. Assess eligibility
++grantforge assess rfp.json profile.json --output assessment.json
+ 
+-class MyAnalyzer(FreeThreadedAgent):
+-    def _run(self, task, pool):
+-        data = task.get("data")
+-        # Your analysis logic here
+-        return {"analyzed": True, "input": data}
++# 6. Draft proposal
++grantforge draft rfp.json profile.json --output proposal.json
+ 
+-agent = MyAnalyzer(AgentConfig(agent_name="my-analyzer"))
+-result = agent.execute({"data": "hello"})
+-print(result.result)  # {"analyzed": True, "input": "hello"}
+-```
++# 7. Compliance review
++grantforge review proposal.json profile.json
++
++# 8. Collaborate (real-time co-editing)
++grantforge collaborate proposal.json edit --user alice --section "approach" --content "We will..."
+ 
+-### Batch Parallel Execution
+-```python
+-tasks = [{"n": i} for i in range(100)]
+-results = agent.execute_many(tasks, task_type="batch", max_workers=16)
+-print(f"Completed: {sum(1 for r in results if r.success)}/{len(results)}")
++# 9. Export for submission
++grantforge export proposal.json profile.json rfp.json --format pdf,docx,xlsx --template nih
+ ```
+ 
+ ---
+ 
+ ## Configuration
+ 
+-Azazael uses hierarchical YAML/JSON configuration (`config/config.yaml`, `config/production.yaml`). Key configuration domains:
+-
+-| Domain | File(s) | Description |
+-|--------|---------|-------------|
+-| Paths | `config.yaml` → `PathsConfig` | Project root, G: drive, output directories |
+-| PAMS | `config.yaml` → `PamsConfig` | Memory recording endpoint, timeouts |
+-| MemoryBus | `config.yaml` → `MemoryBusConfig` | Pub/sub broker, session management |
+-| Clusters | `config.yaml` → `ClustersConfig` | Worm cluster definitions |
+-| Nature | `config.yaml` → `NatureConfig` | Nature cluster discovery |
+-| Free-threading | `config.yaml` → `FreeThreadingConfig` | Pool sizing, work-stealing |
+-| Security | `config.yaml` → `SecurityConfig` | Secret rotation, audit |
+-| Circuit Breaker | `config.yaml` → `CircuitBreakerConfig` | Failure thresholds, backoff |
+-
+----
+-
+-## Project Structure
+-
+-### Worm Categories (24 categories)
+-```
+-monitor       diagnostic    analysis      defense
+-optimization  orchestration sync          repair
+-utility       learning      ml            data
+-visualization container     communication migration
+-security      config        backup        profiling
+-telemetry     expansion     network       system
+-```
+-
+-### Test Suite (45+ test files)
++Environment variables (or `.env`):
+ ```bash
+-# Run all tests (standalone runner — pytest segfaults on 3.14t)
+-python run_tests.py
++# NPU Embedding Server
++OV_EMBED_URL=http://127.0.0.1:18083/v1/embeddings
++OV_DEVICE=NPU  # or GPU, CPU
+ 
+-# Run specific test
+-python tests/test_worm_registry.py
+-python tests/test_clusterworms_unit.py
++# LLM Servers (for drafting/eligibility)
++GEMMA4_URL=http://127.0.0.1:18090/v1
++QWEN3_URL=http://127.0.0.1:18091/v1
+ 
+-# Run integration tests (slow)
+-python run_tests.py --skip-slow
+-```
++# Memory/Compliance
++PMB_HOME=C:/Users/you/.pmb
++ENGRAM_PROJECT=my_grants
++DIRECTMEMORY_PATH=C:/Users/you/.directmemory
+ 
+-### Build System
+-```bash
+-# Nuitka standalone executable build (requires patched Nuitka 4.1.2)
+-python docs/scripts/patch_nuitka_314t.py --apply
+-# Then use the build scripts in build/standalone/
++# Playwright
++PLAYWRIGHT_BROWSERS_PATH=0  # Use bundled
+ ```
+ 
+ ---
+ 
+-## Key Features
++## Models
+ 
+-- **🔌 Auto-discovery** — Worms register via `@register_worm` decorator; imported modules are auto-discovered with pickle caching for <0.2s cold start
+-- **🧵 True Parallelism** — Python 3.14t free-threading enables real parallel execution; `WorkStealingPool` provides dynamic load balancing
+-- **🧠 Persistent Memory** — PAMS Recorder logs every event to SQLite; MemoryBus provides topic-based inter-agent messaging
+-- **🔁 Spawn Diversity** — Category rotation, cooldown enforcement, time-of-day patterns, fleet-aware prioritization
+-- **🛡️ Resilience** — Circuit breakers, dead-letter queues, compliance auditor, thread-safe data structures
+-- **📊 Observability** — Real-time web dashboard with Prometheus metrics, health endpoints, structured logging
+-- **🤖 ML/AI Integration** — SB3 reinforcement learning agents, OpenVINO async inference, neural pipeline for NLP analysis
+-- **🔐 Security** — Thread-safe secrets manager, compliance enforcement, input validation on registry parameters
++| Model | Purpose | Hardware |
++|-------|---------|----------|
++| `mxbai-embed-large-v1` | Embeddings (discovery) | **NPU** (OpenVINO) |
++| `gemma-4` | Reasoning (drafting, eligibility) | CPU/GPU (llama.cpp) |
++| `qwen3` | Code/structure (drafting, compliance) | CPU/GPU (llama.cpp) |
++
++**Dual-model consensus**: Both models must agree on key findings; disagreements flagged for human review.
+ 
+ ---
+ 
+-## Testing and CI — read this before waiting for a green check
++## Compliance & Audit
+ 
+-**There is no hosted CI. No workflow here has ever run and none will until a hosted
+-remote is added.** Measured 2026-10-31 and 2026-11-01:
++Every decision recorded to **DLV dual-ledger**:
++- **DirectMemory** (WAL, session-scoped)
++- **.audit/anchors.jsonl** (Merkle roots, tamper-evident)
+ 
+-```
+-$ git remote -v
+-origin  C:\Users\clint\azazael (fetch)     # a local path, not a host
++```bash
++# Verify audit trail
++grantforge review --audit-verify proposal.json
+ ```
+ 
+-So the gate is `.githooks/pre-commit` (unified registry `tools/preflight_all.py
+---check`, blocking), and that gate does **not** run `tests/`. Nothing does on commit.
++---
+ 
+-| what | command | covers |
+-|---|---|---|
+-| the real suite | `C:/Azazael/.venvs/py315t/Scripts/python.exe -m pytest tests -x -q` | `tests/` (~5,573 tests) |
+-| what the workflows call | `python run_tests.py --skip-slow` | a hardcoded `STANDALONE_OK` list, 24 files / 471 tests — **not** `tests/` |
+-| the committed gate | `python tools/preflight_all.py --check` | gates only, no test execution |
++## Development
+ 
+-A green `run_tests.py` has never meant `tests/` passes. `.github/workflows/*.yml` is kept
+-as the correct job definition for the day `origin` becomes a host; its header says so.
++```bash
++# Run tests
++pytest tests/ -v
+ 
+----
++# Type check
++mypy src/grantforge
+ 
+-## Documentation
+-
+-| Document | Location |
+-|----------|----------|
+-| Architecture Overview | `docs/ARCHITECTURE_DECISION_RECORDS.md` |
+-| API Reference | `docs/API_REFERENCE.md` |
+-| Installation Guide | `docs/INSTALL_GUIDE.md` |
+-| Error Log | `ERROR_LOG.md` (root) |
+-| Tree of Life — which project is which | `docs/AZAZAEL_TREE_OF_LIFE.md` |
+-| Packaging plan — what ships, what does not | `docs/PACKAGING_PLAN.md` |
+-| The Bible — corpus, checker, generated genealogy | `docs/bible/README.md` |
+-| Fitting the tree to another box — per-platform guides and their claim ledger | `docs/platforms/README.md` |
+-| Session Startup | `SESSION_STARTUP.md` (root) |
+-| SOP & Governance | `SOP.md` (root) |
+-| Conversion Plans | `docs/RUST_CONVERSION_PLAN.md` |
+-| Video Generation | `docs/VIDEO_GENERATION_PROTOCOL.md` |
++# Lint
++ruff check src/grantforge
+ 
+----
++# Contract tests (per engine)
++pytest tests/contracts/ -v
++```
+ 
+-## Compliance Scanner CLI Reference
++### Engine Contract Tests
+ 
+-The AST Anti-Pattern Scanner (`src/CORE/compliance/scanner.py`) detects 7 anti-pattern categories using AST + regex.
++Each engine has contract tests verifying:
++- Input/output schema compliance
++- Error handling
++- Health check responses
++- Performance budgets (<5s discovery, <3s eligibility, <10s draft)
+ 
+-### Basic Usage
+-```bash
+-# Scan current directory
+-python src/CORE/compliance/scanner.py --report
++---
+ 
+-# Scan specific directory with HTML output
+-python src/CORE/compliance/scanner.py --report --dir src/CORE --format html --open
++## License
+ 
+-# CI mode (exit code 1 if findings)
+-python src/CORE/compliance/scanner.py --report --ci --quiet
++Apache-2.0 — See [LICENSE](LICENSE)
+ 
+-# Watch mode (continuous re-scan on file changes)
+-python src/CORE/compliance/scanner.py --watch --watch-delay 2.0
++---
+ 
+-# Daemon mode (scan every 5 minutes)
+-python src/CORE/compliance/scanner.py --daemon --daemon-interval 300
+-```
++## Citation
+ 
+-### All CLI Flags
+-| Flag | Description |
+-|------|-------------|
+-| `--report` | Scan directory and print compliance report |
+-| `--dir DIR` | Directory to scan (default: current) |
+-| `--format {text,json,html,junit-xml}` | Output format |
+-| `--output-dir DIR` | Write findings JSON to directory |
+-| `--ci` | Exit non-zero if findings exist |
+-| `--quiet` | Suppress stdout except verdict |
+-| `--summary-only` | Only print summary counts |
+-| `--watch` | Watch for file changes and re-scan |
+-| `--watch-delay N` | Debounce delay (default: 1.0s) |
+-| `--daemon` | Daemon mode (scan on fixed interval) |
+-| `--daemon-interval N` | Interval between daemon scans (default: 300s) |
+-| `--exclude-dirs DIRS` | Comma-separated dirs to exclude |
+-| `--exclude-files PATT` | Comma-separated glob patterns |
+-| `--scannerignore PATH` | Path to .scannerignore file |
+-| `--fail-on CATS` | Categories that cause non-zero exit |
+-| `--severity {error,warning,info}` | Minimum severity to report |
+-| `--threshold N` | Only fail if findings > threshold |
+-| `--max-findings-per-file N` | Cap findings per file |
+-| `--max-findings-total N` | Cap total findings |
+-| `--since DATE` | Scan files modified after date |
+-| `--include-ext EXTS` | File extensions to scan |
+-| `--ignore-errors` | Skip unreadable files silently |
+-| `--auto-fix` | Auto-fix emoji and os.system() |
+-| `--dry-run` | Preview auto-fix changes |
+-| `--suggest-fix` | Show fix suggestions |
+-| `--explain` | Show pattern explanations |
+-| `--compliance-score` | Print 0-100 score with grade |
+-| `--open` | Open HTML report in browser |
+-| `--export-dir DIR` | Save to timestamped export dir |
+-| `--rotate N` | Keep last N exports |
+-| `--parallel` | Use parallel scanning |
+-| `--health-check` | Run self-test |
+-| `--list-rules` | List all anti-pattern rules |
+-| `--version` | Show version |
+-| `--init` | Create .scanner-config.yaml |
+-| `--db-init` | Initialize findings database |
+-| `--db-history [N]` | Show scan history (N days) |
+-| `--db-trend [N]` | Show finding trends (N days) |
+-| `--db-regression [N]` | Show regressions (N days) |
+-
+-### Exit Codes
+-| Code | Meaning |
+-|------|---------|
+-| 0 | No findings (or all clean) |
+-| 1 | Findings detected (CI mode) |
+-| 2 | Error (invalid args, config issues) |
++```bibtex
++@software{grantforge,
++  title = {grantforge: AI-Native Grant Tooling},
++  author = {Azazael},
++  year = {2026},
++  version = {2.0.0},
++  url = {https://github.com/azazael/grantforge}
++}
++```
+ 
+ ---
+ 
+-## License
+-
+-Internal project — Azazael. See `docs/LICENSE_COMPLIANCE_REPORT.md` for third-party license compliance details.
++**Built on Azazael stack**: DirectMemory, PMB, Engram, PAMS, ComplianceOrchestrator, llama.cpp, OpenVINO, Nuitka.
+\ No newline at end of file
+diff --git a/pyproject.toml b/pyproject.toml
+index 2499fda6..61796658 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -1,59 +1,119 @@
+-[build-system]
+-requires = ["setuptools>=64"]
+-build-backend = "setuptools.build_meta:__legacy__"
+-
+ [project]
+-name = "azazael"
+-version = "1.0.0"
+-description = "Azazael — self-replicating AI worm ecosystem for autonomous system administration"
++name = "grantforge"
++version = "2.0.0"
++description = "AI-native grant tooling: discover → assess → draft → review → collaborate → export → submit"
+ readme = "README.md"
+-# REQUIRES Python 3.15t (free-threaded build). The GIL-disabled build is
+-# mandatory for concurrent worm execution (CLUSTERWORMS, CONCURRENCY).
+-# Standard Python 3.15 (non-free-threaded) will also work but with
+-# degraded parallel performance.
+-requires-python = ">=3.15"
++authors = [{name = "Azazael"}]
++license = {text = "CDDL-1.1"}
++requires-python = ">=3.13"  # Python 3.14t free-threaded
+ classifiers = [
+     "Development Status :: 4 - Beta",
+-    "Programming Language :: Python :: 3.15",
+-    "Programming Language :: Python :: 3 :: Only",
+-    "Operating System :: Microsoft :: Windows",
++    "Intended Audience :: Science/Research",
++    "License :: OSI Approved :: Apache Software License",
++    "Programming Language :: Python :: 3.13",
++    "Programming Language :: Python :: 3.14",
++    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+ ]
+ dependencies = [
+-    "psutil>=7.2.2,<8",
++    # Core
++    "pydantic>=2.10",
++    "pydantic-settings>=2.6",
++    "typer>=0.12",
++    "rich>=13.9",
++    
++    # AI/ML
++    "torch>=2.5",  # With OpenVINO backend
++    "openvino>=2024.6",
++    "sentence-transformers>=3.2",
++    "transformers>=4.45",
++    "llama-cpp-python>=0.3.0",
++    "marker-pdf>=0.2",  # PDF → Markdown
++    "unstructured>=0.16",  # PDF/DOCX parsing with tables/images
++    
++    # Search/Embedding
++    "rank-bm25>=0.2",
++    "faiss-cpu>=1.8",  # Or faiss-gpu
++    
++    # Export
++    "reportlab>=4.2",
++    "python-docx>=1.1",
++    "openpyxl>=3.1",
++    
++    # Web/Async
++    "httpx>=0.27",
++    "aiofiles>=24.1",
++    "playwright>=1.46",
++    "fastapi>=0.115",
++    "uvicorn>=0.30",
++    "httpx-sse>=0.4",
++    
++    # Database
++    "aiosqlite>=0.20",
++    "sqlalchemy>=2.0",
++    
++    # Utilities
++    "python-dotenv>=1.0",
++    "pyyaml>=6.0",
++    "jsonschema>=4.23",
++    "email-validator>=2.2",
+ ]
+ 
+-[tool.coverage.run]
+-source = ["src"]
+-omit = ["*/tests/*", "*/__pycache__/*", "*/META/*"]
+-
+-[tool.coverage.report]
+-show_missing = true
+-skip_covered = true
+-
+-[tool.mypy]
+-exclude = [
+-    # Thin backward-compat wrappers that import from AZAZAEL_TOOLKIT/
+-    "src/azazael_toolkit.py",
+-    "src/COMPREHENSIVE_FIX.py",
+-    "src/environment_manager.py",
+-    "src/math_certainty.py",
+-    "src/QL_ANALYSIS.py",
+-    "src/REAL_FRAMEWORK_TEST.py",
+-    "src/update_docs_paths.py",
++[project.optional-dependencies]
++dev = [
++    "pytest>=8.3",
++    "pytest-asyncio>=0.23",
++    "pytest-cov>=5.0",
++    "ruff>=0.6",
++    "mypy>=1.11",
++    "pre-commit>=3.8",
++]
++test = [
++    "pytest>=8.3",
++    "pytest-asyncio>=0.23",
++    "pytest-cov>=5.0",
++    "httpx>=0.27",
+ ]
+ 
+-# sklearn ships no py.typed marker; any importer would trip import-untyped.
+-[[tool.mypy.overrides]]
+-module = "sklearn.*"
+-ignore_missing_imports = true
+-
+-[project.scripts]
+-azazael-ctl = "CORE.azazael_ctl:main"
+-azazael-doctor = "CORE.doctor:cmd_doctor"
+-azazael-maintain = "CORE.data_retention:cmd_maintain"
+-azazael-observability = "CORE.metrics:cmd_metrics"
+-azazael-backup = "CORE.backup:incremental_backup"
+-azazael-doctor-full = "CORE.doctor:run_all"
++[build-system]
++requires = ["setuptools>=75", "wheel"]
++build-backend = "setuptools.build_meta"
+ 
+ [tool.setuptools.packages.find]
+ where = ["src"]
++include = ["grantforge*"]
++
++[tool.pytest.ini_options]
++asyncio_mode = "auto"
++testpaths = ["tests"]
++python_files = ["test_*.py"]
++python_functions = ["test_*"]
++
++[tool.ruff]
++line-length = 100
++target-version = "py313"
++select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "SIM", "T20"]
++ignore = ["E501", "B008"]
++per-file-ignores = { "tests/*" = ["S101", "D100"] }
++
++[tool.ruff.format]
++quote-style = "double"
++indent-style = "space"
++skip-magic-trailing-comma = true
++
++[tool.mypy]
++python_version = "3.13"
++strict = true
++warn_return_any = true
++warn_unused_ignores = true
++disallow_untyped_defs = true
++disallow_incomplete_defs = true
++check_untyped_defs = true
++no_implicit_optional = true
++warn_redundant_casts = true
++namespace_packages = true
++explicit_package_bases = true
++mypy_path = "src"
++
++[tool.nuitka]
++# Config loaded from grantforge.nuitka.toml
++config-file = "grantforge.nuitka.toml"
+\ No newline at end of file
