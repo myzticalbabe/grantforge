@@ -105,12 +105,40 @@ def test_export_says_a_deadline_is_unstated_instead_of_printing_none():
     assert "Deadline: None" not in docx_text
 
 
-def test_discovery_searches_opportunities():
-    out = run(DiscoveryEngine().run(DiscoveryInput(query="low power cardiac sensing", top_k=3)))
+def test_discovery_search_matches_the_query_not_a_fixed_prefix():
+    """It used to return the first top_k of a fixed funder list for any query, so
+    the keywords it extracted were decoration and 'crop rotation' answered
+    nih/nsf/doe. Matching is now real: only funders whose domain hits the query."""
+    engine = DiscoveryEngine()
+    cardiac = run(engine.run(DiscoveryInput(query="cardiac sensing", top_k=5)))
+    assert cardiac.success is True
+    assert [f.id for f in cardiac.opportunities] == ["nih", "nsf"]
+    assert cardiac.metadata["matched"] == {"nih": ["cardiac"], "nsf": ["sensing"]}
+    assert cardiac.metadata["keywords"] == ["cardiac", "sensing"]
+
+    crops = run(engine.run(DiscoveryInput(query="crop rotation", top_k=5)))
+    assert [f.id for f in crops.opportunities] == ["usda"]
+
+    # Ranked by hits, then id: 'power' hits doe only.
+    power = run(engine.run(DiscoveryInput(query="power grid efficiency", top_k=5)))
+    assert [f.id for f in power.opportunities] == ["doe"]
+    assert power.metadata["matched"] == {"doe": ["efficiency", "grid", "power"]}
+
+
+def test_discovery_search_with_no_match_returns_nothing():
+    """An off-corpus query is an empty result, not the catalogue's first entries."""
+    out = run(DiscoveryEngine().run(DiscoveryInput(query="medieval poetry", top_k=3)))
     assert out.success is True
-    assert len(out.opportunities) == 3
-    assert [f.id for f in out.opportunities] == ["nih", "nsf", "doe"]
-    assert out.metadata["keywords"] == ["low", "power", "cardiac", "sensing"]
+    assert out.opportunities == []
+    assert out.metadata["corpus_size"] == 5
+    assert out.metadata["matched"] == {}
+    assert "not that a call is open" in out.metadata["note"]
+
+
+def test_discovery_search_respects_top_k():
+    """One hit each, so the tie-break by id decides: doe, nih, nsf -> first 2."""
+    out = run(DiscoveryEngine().run(DiscoveryInput(query="science health energy", top_k=2)))
+    assert [f.id for f in out.opportunities] == ["doe", "nih"]
 
 
 def test_discovery_funder_intel_reports_only_the_ein_it_was_given():
@@ -949,12 +977,13 @@ def test_cli_help_lists_the_commands():
 
 def test_cli_discover_writes_real_results(tmp_path):
     out = tmp_path / "discovery.json"
-    proc = _cli("discover", "low power cardiac sensing", "--top", "3", "-o", str(out))
+    proc = _cli("discover", "cardiac sensing", "--top", "3", "-o", str(out))
     assert proc.returncode == 0, proc.stderr
     assert out.exists()
 
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["success"] is True
-    assert [f["id"] for f in payload["opportunities"]] == ["nih", "nsf", "doe"]
+    assert [f["id"] for f in payload["opportunities"]] == ["nih", "nsf"]
     assert payload["metadata"]["mode"] == "keyword_search"
-    assert payload["metadata"]["keywords"] == ["low", "power", "cardiac", "sensing"]
+    assert payload["metadata"]["keywords"] == ["cardiac", "sensing"]
+    assert payload["metadata"]["corpus_size"] == 5
