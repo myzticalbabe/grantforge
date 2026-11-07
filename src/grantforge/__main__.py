@@ -186,6 +186,9 @@ def draft(
         instruction=instruction,
     )))
     
+    draft_kind = result.metadata.get("draft_kind") if result.metadata else None
+    if draft_kind:
+        console.print(f"[yellow]draft_kind: {draft_kind} (not submission-ready)[/yellow]")
     if output and result.proposal:
         output.write_text(result.proposal.model_dump_json(indent=2))
         console.print(f"[green]Proposal written to {output}[/green]")
@@ -330,7 +333,9 @@ def health():
             result = await engine.health_check()
             table.add_row(
                 name,
-                "[green]healthy[/green]" if result.get("status") == "healthy" else "[red]unhealthy[/red]",
+                ("[green]healthy[/green]" if result.get("status") == "healthy"
+                 else "[yellow]unprobed[/yellow]" if result.get("status") == "unprobed"
+                 else "[red]unhealthy[/red]"),
                 str(result)
             )
         
