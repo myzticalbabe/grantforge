@@ -19,7 +19,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.13', '3.14']
+        # 3.14 omitted: marker-pdf pins pillow<11 (10.4.0 has no 3.14 wheel
+        # and its source build fails). Re-add when upstream relaxes pillow.
+        python-version: ['3.13']
 
     steps:
       - uses: actions/checkout@v4
