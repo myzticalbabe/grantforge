@@ -1,0 +1,41 @@
+name: OIDC debug (temporary)
+
+# E2R diagnostic: stop guessing the publisher mismatch, measure the claims.
+# Requests the same audience=pypi OIDC token the publish job would mint,
+# decodes the payload IN-RUN, and prints ONLY the claim fields (public repo
+# facts). The token itself is never printed. Delete this file after use.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  show-claims:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print OIDC claims (token never leaves the runner)
+        run: |
+          python3 - <<'EOF'
+          import base64, json, os, urllib.request
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"] + "&audience=pypi"
+          req = urllib.request.Request(url, headers={
+              "Authorization": "bearer " + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"],
+              "Accept": "application/json",
+          })
+          with urllib.request.urlopen(req, timeout=30) as r:
+              token = json.load(r)["value"]
+          payload = token.split(".")[1]
+          payload += "=" * (-len(payload) % 4)
+          claims = json.loads(base64.urlsafe_b64decode(payload))
+          keep = {k: claims.get(k) for k in (
+              "iss", "aud", "sub", "repository", "repository_owner",
+              "repository_visibility", "workflow_ref", "job_workflow_ref",
+              "ref", "ref_type", "environment", "event_name",
+          )}
+          print("OIDC_CLAIMS_START")
+          print(json.dumps(keep, indent=2))
+          print("OIDC_CLAIMS_END")
+          EOF
