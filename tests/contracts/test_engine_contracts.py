@@ -256,34 +256,27 @@ class TestEngineContracts:
         assert len(assessment.checks) == 1
 
 
-# Performance Budget Tests (marked as benchmark)
+# Performance Budget Tests (placeholders until the ov_embed_server harness lands).
+# They were committed requesting engine fixtures that do not exist, so every
+# one errored at setup. Skip explicitly instead of failing the suite.
 class TestPerformanceBudgets:
     """Performance budgets for each engine (when fully implemented)."""
 
-    @pytest.mark.benchmark
-    @pytest.mark.asyncio
-    async def test_discovery_budget(self, discovery_engine):
+    @pytest.mark.skip(reason="needs ov_embed_server harness")
+    async def test_discovery_budget(self):
         """Discovery: <5s for top-10 semantic search."""
-        # TODO: Implement with real ov_embed_server
-        pass
 
-    @pytest.mark.benchmark
-    @pytest.mark.asyncio
-    async def test_eligibility_budget(self, eligibility_engine):
+    @pytest.mark.skip(reason="needs ov_embed_server harness")
+    async def test_eligibility_budget(self):
         """Eligibility: <3s for full assessment."""
-        pass
 
-    @pytest.mark.benchmark
-    @pytest.mark.asyncio
-    async def test_drafting_budget(self, drafting_engine):
+    @pytest.mark.skip(reason="needs ov_embed_server harness")
+    async def test_drafting_budget(self):
         """Drafting: <10s per section."""
-        pass
 
-    @pytest.mark.benchmark
-    @pytest.mark.asyncio
-    async def test_export_budget(self, export_engine):
+    @pytest.mark.skip(reason="needs ov_embed_server harness")
+    async def test_export_budget(self):
         """Export: <5s for PDF + Word + Excel bundle."""
-        pass
 
 
 if __name__ == "__main__":
