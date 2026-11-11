@@ -66,7 +66,7 @@ Installable today, no index needed — Madi first, then the tool:
 
 ```bash
 pip install https://github.com/myzticalbabe/madi/releases/download/v0.1.0/madi-0.1.0-py3-none-any.whl
-pip install https://github.com/myzticalbabe/grantforge/releases/download/v2.0.0/grantforge-2.0.0-py3-none-any.whl
+pip install https://github.com/myzticalbabe/grantforge/releases/download/v2.0.1/grantforge-2.0.1-py3-none-any.whl
 
 # or straight from the repository, with the browser rung
 pip install "grantforge[browser] @ git+https://github.com/myzticalbabe/grantforge.git@v2.0.0"

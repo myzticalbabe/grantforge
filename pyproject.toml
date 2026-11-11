@@ -1,6 +1,6 @@
 [project]
 name = "grantforge"
-version = "2.0.0"
+version = "2.0.1"
 description = "AI-native grant tooling: discover → assess → draft → review → collaborate → export → submit"
 readme = "README.md"
 authors = [{name = "Azazael"}]
@@ -59,6 +59,11 @@ dependencies = [
     "jsonschema>=4.23",
     "email-validator>=2.2",
 ]
+
+[project.scripts]
+# Without this a clean install left no `grantforge` command: the wheel shipped the
+# package and nothing that runs it (measured on the 2.0.0 wheel, 2026-11-11).
+grantforge = "grantforge.__main__:app"
 
 [project.optional-dependencies]
 dev = [

@@ -3,7 +3,7 @@ grantforge — AI-native grant tooling (Scribe v2)
 Single binary via Nuitka: discover → assess → draft → review → collaborate → export → submit
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 __author__ = "Azazael"
 
 from grantforge.discovery import DiscoveryEngine
