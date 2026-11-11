@@ -62,26 +62,28 @@ grantforge.exe (Nuitka single binary ~200MB)
 
 ## Installation
 
-### Windows (Pre-built)
-```powershell
-# Download grantforge.exe from releases
-# Run directly - no install needed
-grantforge.exe discover "your query"
+Installable today, no index needed — Madi first, then the tool:
+
+```bash
+pip install https://github.com/myzticalbabe/madi/releases/download/v0.1.0/madi-0.1.0-py3-none-any.whl
+pip install https://github.com/myzticalbabe/grantforge/releases/download/v2.0.0/grantforge-2.0.0-py3-none-any.whl
+
+# or straight from the repository, with the browser rung
+pip install "grantforge[browser] @ git+https://github.com/myzticalbabe/grantforge.git@v2.0.0"
 ```
 
-### From Source (Python 3.14t free-threaded)
+From source:
+
 ```bash
-# Requires Python 3.14t free-threaded
-git clone https://github.com/azazael/grantforge
+git clone https://github.com/myzticalbabe/grantforge
 cd grantforge
 pip install -e ".[dev]"
-
-# Install Playwright browsers
-playwright install chromium
-
-# Build single binary
-python -m nuitka --module-config=grantforge.nuitka.toml grantforge.__main__
+playwright install chromium          # only for the render rung
 ```
+
+`pip install grantforge` works once the PyPI trusted publisher exists; the publish
+workflow is gated on the repository variable `PYPI_TRUSTED_PUBLISHER` so a tag that
+cannot publish leaves a green repository rather than a red X.
 
 ---
 
