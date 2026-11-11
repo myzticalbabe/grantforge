@@ -256,28 +256,32 @@ class TestEngineContracts:
         assert len(assessment.checks) == 1
 
 
-# Performance Budget Tests (placeholder - no fixtures needed)
+# Performance Budget Tests (marked as benchmark)
 class TestPerformanceBudgets:
     """Performance budgets for each engine (when fully implemented)."""
 
+    @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_discovery_budget(self):
+    async def test_discovery_budget(self, discovery_engine):
         """Discovery: <5s for top-10 semantic search."""
         # TODO: Implement with real ov_embed_server
         pass
 
+    @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_eligibility_budget(self):
+    async def test_eligibility_budget(self, eligibility_engine):
         """Eligibility: <3s for full assessment."""
         pass
 
+    @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_drafting_budget(self):
+    async def test_drafting_budget(self, drafting_engine):
         """Drafting: <10s per section."""
         pass
 
+    @pytest.mark.benchmark
     @pytest.mark.asyncio
-    async def test_export_budget(self):
+    async def test_export_budget(self, export_engine):
         """Export: <5s for PDF + Word + Excel bundle."""
         pass
 
