@@ -34,6 +34,10 @@ jobs:
       - name: Install package + test deps
         run: |
           python -m pip install --upgrade pip
+          # INTERIM: madi is not on PyPI yet, so the resolver cannot see
+          # it. Install from git first; pip then treats `madi>=0.1.0` as
+          # satisfied. Delete this line the day madi lands on the index.
+          pip install "git+https://github.com/myzticalbabe/madi.git@v0.1.0"
           pip install -e ".[test]"
 
       - name: Run test suite
