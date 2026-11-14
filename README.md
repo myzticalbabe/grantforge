@@ -1,217 +1,70 @@
-# grantforge — AI-Native Grant Tooling (Scribe v2)
+# grantforge
 
-**Single binary. Zero dependencies. NPU-accelerated. Dual-model consensus.**
+GrantForge — AI-native grant tooling: discover, assess, draft, review, collaborate, export, submit.
 
-```
-grantforge discover "NSF early career quantum computing"
-grantforge assess rfp.json profile.json
-grantforge draft rfp.json profile.json --output proposal.json
-grantforge review proposal.json profile.json
-grantforge collaborate proposal.json edit --user alice --section methods --content "We propose..."
-grantforge export proposal.json profile.json rpf.json --format pdf,docx,xlsx
-```
+[![CI](https://github.com/myzticalbabe/grantforge/actions/workflows/ci.yml/badge.svg)](https://github.com/myzticalbabe/grantforge/actions/workflows/ci.yml)
+[![Pages Deploy](https://github.com/myzticalbabe/grantforge/actions/workflows/pages-deploy.yml/badge.svg)](https://github.com/myzticalbabe/grantforge/actions/workflows/pages-deploy.yml)
+[![License: SOUL FORGE](https://img.shields.io/badge/License-SOUL_FORGE-violet.svg)](LICENSE)
+[![GitHub release](https://img.shields.io/github/v/release/myzticalbabe/grantforge)](https://github.com/myzticalbabe/grantforge/releases)
+[![GitHub stars](https://img.shields.io/github/stars/myzticalbabe/grantforge?style=social)](https://github.com/myzticalbabe/grantforge/stargazers)
 
 ---
 
-## What It Does
+## Overview
 
-| Command | Purpose | AI Capability |
-|---------|---------|---------------|
-| `discover` | Semantic funding search, RFP ingestion, funder 990 intel, auto-profiles | mxbai-embed-large-v1 on **NPU** (5.7x faster than CPU) |
-| `assess` | Full eligibility verdict per criterion (career stage, citizenship, ESI, prior funding, mechanism limits) | Structured extraction + profile matching |
-| `draft` | Checklist-driven section drafting, content library, style guide enforcement, inline AI, voice learning | **Dual-model consensus** (gemma4 reasoning + qwen3 code) |
-| `review` | Compliance checks via supervisor_verdict fanout (PMB + Engram + PAMS), DLV dual-ledger audit trail | Multi-memory consensus |
-| `collaborate` | Real-time co-editing (Operational Transform), anchor comments, SME info requests, kanban pipeline | Conflict-free collaborative editing |
-| `export` | Funder-specific templates (NIH/NSF/DOE/Foundation) → PDF/Word/Excel + complete submission bundle | One-click formatted output |
-
----
-
-## Architecture
-
-```
-grantforge.exe (Nuitka single binary ~200MB)
-├── grantforge/
-│   ├── discovery/      # NPU embeddings, RFP parsing, funder 990s, auto-profiles
-│   ├── eligibility/    # Criterion extraction, per-criterion verdicts
-│   ├── drafting/       # Checklist → sections → library → inline AI → voice
-│   ├── compliance/     # supervisor_verdict fanout + DLV audit
-│   ├── collaboration/  # OT co-editing, comments, requests, kanban
-│   └── export/         # NIH/NSF/DOE templates → PDF/Word/Excel
-├── llama-server/
-│   ├── ov_embed_server.py   # NPU mxbai embeddings (OpenVINO)
-│   ├── codegraph_mcp.py     # Tree-sitter codegraph tools
-│   └── executor.py          # Unified EngineExecutor plugins
-└── DirectMemory/            # Session recording + PMB/Engram/PAMS bridge
-```
-
----
-
-## Hardware Requirements
-
-| Component | Minimum | Recommended |
-|-----------|---------|-------------|
-| CPU | 8 cores | 16+ cores (free-threaded Python 3.14t) |
-| RAM | 16 GB | 32+ GB |
-| NPU | Intel AI Boost / Arc 140T | Intel Core Ultra (NPU 40+ TOPS) |
-| GPU | Optional (OpenVINO GPU fallback) | Arc 140T / discrete for fallback |
-| Storage | 5 GB | 20+ GB (models + cache) |
-
-**NPU required for mxbai embeddings at speed.** CPU fallback: 4.7 chunks/s vs NPU 26.9 chunks/s.
-
----
+Split from AZAZAEL for independent development.
 
 ## Installation
 
-Installable today, no index needed — Madi first, then the tool:
-
 ```bash
-pip install https://github.com/myzticalbabe/madi/releases/download/v0.1.0/madi-0.1.0-py3-none-any.whl
-pip install https://github.com/myzticalbabe/grantforge/releases/download/v2.0.1/grantforge-2.0.1-py3-none-any.whl
-
-# or straight from the repository, with the browser rung
-pip install "grantforge[browser] @ git+https://github.com/myzticalbabe/grantforge.git@v2.0.0"
+pip install -e .
 ```
 
-From source:
+## Usage
 
-```bash
-git clone https://github.com/myzticalbabe/grantforge
-cd grantforge
-pip install -e ".[dev]"
-playwright install chromium          # only for the render rung
-```
+python -m grantforge --help
 
-`pip install grantforge` works once the PyPI trusted publisher exists; the publish
-workflow is gated on the repository variable `PYPI_TRUSTED_PUBLISHER` so a tag that
-cannot publish leaves a green repository rather than a red X.
+## Architecture
 
----
-
-## Quick Start
-
-```bash
-# 1. Start NPU embedding server (separate terminal)
-python -m llama_server.unified.ov_embed_server --device NPU --port 18083
-
-# 2. Discover opportunities
-grantforge discover "NIH R01 early career cancer immunotherapy" --top 5 --output results.json
-
-# 3. Ingest an RFP
-grantforge discover --rfp nih_rfa.pdf --output rfp.json
-
-# 4. Build your profile (auto from ORCID)
-grantforge discover --profile orcid:0000-0000-0000-0000 --output profile.json
-
-# 5. Assess eligibility
-grantforge assess rfp.json profile.json --output assessment.json
-
-# 6. Draft proposal
-grantforge draft rfp.json profile.json --output proposal.json
-
-# 7. Compliance review
-grantforge review proposal.json profile.json
-
-# 8. Collaborate (real-time co-editing)
-grantforge collaborate proposal.json edit --user alice --section "approach" --content "We will..."
-
-# 9. Export for submission
-grantforge export proposal.json profile.json rfp.json --format pdf,docx,xlsx --template nih
-```
-
----
-
-## Configuration
-
-Environment variables (or `.env`):
-```bash
-# NPU Embedding Server
-OV_EMBED_URL=http://127.0.0.1:18083/v1/embeddings
-OV_DEVICE=NPU  # or GPU, CPU
-
-# LLM Servers (for drafting/eligibility)
-GEMMA4_URL=http://127.0.0.1:18090/v1
-QWEN3_URL=http://127.0.0.1:18091/v1
-
-# Memory/Compliance
-PMB_HOME=C:/Users/you/.pmb
-ENGRAM_PROJECT=my_grants
-DIRECTMEMORY_PATH=C:/Users/you/.directmemory
-
-# Playwright
-PLAYWRIGHT_BROWSERS_PATH=0  # Use bundled
-```
-
----
-
-## Models
-
-| Model | Purpose | Hardware |
-|-------|---------|----------|
-| `mxbai-embed-large-v1` | Embeddings (discovery) | **NPU** (OpenVINO) |
-| `gemma-4` | Reasoning (drafting, eligibility) | CPU/GPU (llama.cpp) |
-| `qwen3` | Code/structure (drafting, compliance) | CPU/GPU (llama.cpp) |
-
-**Dual-model consensus**: Both models must agree on key findings; disagreements flagged for human review.
-
----
-
-## Compliance & Audit
-
-Every decision recorded to **DLV dual-ledger**:
-- **DirectMemory** (WAL, session-scoped)
-- **.audit/anchors.jsonl** (Merkle roots, tamper-evident)
-
-```bash
-# Verify audit trail
-grantforge review --audit-verify proposal.json
-```
-
----
-
-## Development
-
-```bash
-# Run tests
-pytest tests/ -v
-
-# Type check
-mypy src/grantforge
-
-# Lint
-ruff check src/grantforge
-
-# Contract tests (per engine)
-pytest tests/contracts/ -v
-```
-
-### Engine Contract Tests
-
-Each engine has contract tests verifying:
-- Input/output schema compliance
-- Error handling
-- Health check responses
-- Performance budgets (<5s discovery, <3s eligibility, <10s draft)
-
----
+See [Domain Atlas](https://myzticalbabe.github.io) for interactive visualization.
 
 ## License
 
-Apache-2.0 — See [LICENSE](LICENSE)
+This project is licensed under the **SOUL FORGE License v1.0** — see [LICENSE](LICENSE) for details.
 
----
+> *"Code is crystallized intention. Tend the fire."*
 
-## Citation
+## Related Repositories
 
-```bibtex
-@software{grantforge,
-  title = {grantforge: AI-Native Grant Tooling},
-  author = {Azazael},
-  year = {2026},
-  version = {2.0.0},
-  url = {https://github.com/azazael/grantforge}
-}
-```
+| Repo | Description |
+|------|-------------|
+| [azazael](https://github.com/myzticalbabe/azazael) | Monorepo: worm registry, cluster system, agent harness |
+| [EveUnleashed](https://github.com/myzticalbabe/EveUnleashed) | Gamora, Lucy, Jaeger, Berzerker AIO native on 3.16t |
+| [eliza](https://github.com/myzticalbabe/eliza) | Companion runtime: shards, adopted trees |
+| [codex-video-engine](https://github.com/myzticalbabe/codex-video-engine) | CODEX Studio desktop app + video engine |
+| [ecosystem-orchestrator](https://github.com/myzticalbabe/ecosystem-orchestrator) | ML platform install/orchestration |
+| [scribe](https://github.com/myzticalbabe/scribe) | Documentation generation |
+| [persephone-sync](https://github.com/myzticalbabe/persephone-sync) | Cross-platform env sync |
+| [hydra-mlcluster](https://github.com/myzticalbabe/hydra-mlcluster) | Adaptive ML cluster processing |
+| [flaming-sword](https://github.com/myzticalbabe/flaming-sword) | Defensive instrument: sentinel, compliance, formal verification |
+| [shardex](https://github.com/myzticalbabe/shardex) | Shard execution engine |
+| [krampus](https://github.com/myzticalbabe/krampus) | Composition: MellifluousML, Madi, Gamora, Eve, Lilith |
+| [azazael-core](https://github.com/myzticalbabe/azazael-core) | Installable, interpreter-agnostic repackaging |
+| [grantforge](https://github.com/myzticalbabe/grantforge) | AI-native grant tooling |
+| [madi](https://github.com/myzticalbabe/madi) | Browsing instrument: fetch, challenge taxonomy, scorer |
+| [jaeger](https://github.com/myzticalbabe/jaeger) | Durable spans, JSONL ledger, stdlib only |
+| [cradle](https://github.com/myzticalbabe/cradle) | Composition over FLAMING SWORD, REAPER, GRIMOIRE |
+| [esquire-admissibility](https://github.com/myzticalbabe/esquire-admissibility) | AI-evidence admissibility gates |
+| [nurse-ratchet](https://github.com/myzticalbabe/nurse-ratchet) | Behavioural package: person state modelled |
 
----
+## Contributing
 
-**Built on Azazael stack**: DirectMemory, PMB, Engram, PAMS, ComplianceOrchestrator, llama.cpp, OpenVINO, Nuitka.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## Links
+
+- **Monorepo**: https://github.com/myzticalbabe/azazael
+- **Landing Hub**: https://myzticalbabe.github.io
+- **Domain Atlas**: https://myzticalbabe.github.io/index.html
+- **Issues**: https://github.com/myzticalbabe/grantforge/issues
+- **Discussions**: https://github.com/myzticalbabe/grantforge/discussions
