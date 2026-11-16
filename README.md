@@ -1,6 +1,6 @@
 # grantforge
 
-GrantForge — AI-native grant tooling: discover, assess, draft, review, collaborate, export, submit.
+GrantForge — a Python command-line toolkit for the grant proposal workflow: discover, assess, draft, review, collaborate, export.
 
 [![CI](https://github.com/myzticalbabe/grantforge/actions/workflows/ci.yml/badge.svg)](https://github.com/myzticalbabe/grantforge/actions/workflows/ci.yml)
 [![Pages Deploy](https://github.com/myzticalbabe/grantforge/actions/workflows/pages-deploy.yml/badge.svg)](https://github.com/myzticalbabe/grantforge/actions/workflows/pages-deploy.yml)
@@ -12,17 +12,96 @@ GrantForge — AI-native grant tooling: discover, assess, draft, review, collabo
 
 ## Overview
 
-Split from AZAZAEL for independent development.
+GrantForge turns an RFP and a candidate profile into a reviewed, exportable proposal
+bundle. Six engines do the work:
+
+| Command | Engine | What it does |
+|---|---|---|
+| `discover` | Discovery | Search funding opportunities, ingest an RFP, look up funder intelligence, build a profile |
+| `assess` | Eligibility | Score a profile against an RFP's criteria and return a verdict with reasons |
+| `draft` | Drafting | Compose proposal sections from the RFP and the profile |
+| `review` | Compliance | Run eligibility, budget, format, ethics and conflict-of-interest checks over a proposal |
+| `collaborate` | Collaboration | Edit, comment, request information, assign and reorder proposal sections |
+| `export` | Export | Render a proposal to PDF, Word and Excel, plus a submission bundle and manifest |
+
+`python -m grantforge health` probes every engine and prints what is and is not wired
+up. GrantForge was split out of [AZAZAEL](https://github.com/myzticalbabe/azazael)
+for independent development.
+
+### What it does not do
+
+- **It does not call a language model.** The drafting composer is deterministic
+  (`deterministic_scaffold_no_model`): it lays out the sections the RFP asks for and
+  marks the gaps for a human to fill in. Draft output is a labelled scaffold, not
+  submission-ready prose.
+- **It does not submit anything.** There is no `submit` command and nothing is sent to
+  a funder. Export writes files to a directory you choose.
+- **It does not decide eligibility for you.** The assessment is a rules pass over the
+  RFP's own criteria, and it prints the reason for every check so a person can verify
+  it.
+- The machine-learning dependencies declared in `pyproject.toml` (`torch`,
+  `transformers`, `sentence-transformers`, `faiss-cpu`, `llama-cpp-python`) are not
+  yet wired into the engines — see the `TODO` notes in
+  `src/grantforge/discovery/__init__.py`.
+- The discovery engine matches your query against a small built-in catalogue of
+  funders by keyword. It says which funder's stated domain overlaps your query; it
+  does not say a call is open, because it has no database of open calls.
+
+### Who it is for
+
+- Researchers and research offices who write and submit grant proposals and want a
+  repeatable, reviewable draft-and-check workflow instead of a blank document.
+- Educators and students who want to read or extend a small, readable pipeline: every
+  engine is a plain Python class over a documented contract in
+  `src/grantforge/engine.py`, and the test suite is the specification.
+- Anyone deciding whether deterministic, auditable tooling fits proposal work better
+  than a black-box generator. That trade-off is stated above rather than hidden.
 
 ## Installation
 
+Requires **Python 3.13 or newer** (`pyproject.toml` declares `requires-python = ">=3.13"`).
+
 ```bash
-pip install -e .
+git clone https://github.com/myzticalbabe/grantforge.git
+cd grantforge
+python -m venv .venv
+# Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+pip install "git+https://github.com/myzticalbabe/madi.git@v0.1.0"   # not on PyPI yet
+pip install -e ".[test]"
 ```
+
+Install the `madi` line **before** `pip install -e ".[test]"` — `madi` is not on PyPI,
+so the resolver cannot satisfy it on its own and the editable install fails with
+`No matching distribution found for madi`.
 
 ## Usage
 
-python -m grantforge --help
+```bash
+python -m grantforge --help          # or: grantforge --help, after install
+python -m grantforge health          # probe every engine
+python -m grantforge version
+```
+
+Each command takes JSON files in and writes JSON files out:
+
+```bash
+grantforge assess rfp.json profile.json -o assessment.json
+grantforge draft rfp.json profile.json -o proposal.json
+grantforge review proposal.json profile.json
+grantforge export proposal.json profile.json rfp.json --out-dir ./export
+```
+
+## Running the tests
+
+```bash
+python -m pytest tests/ -q
+```
+
+This is the same command CI runs. `tests/conftest.py` puts `src/` first on
+`sys.path`, so the suite exercises your working tree even without installing the
+package.
 
 ## Architecture
 

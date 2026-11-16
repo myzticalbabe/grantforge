@@ -1,0 +1,59 @@
+name: Bug report
+description: Report something in GrantForge that does not work as documented
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. A minimal reproduction gets a fix much faster than a
+        description of symptoms.
+
+        GrantForge's commands are `discover`, `assess`, `draft`, `review`,
+        `collaborate`, `export`, `health` and `version`. Please name the one your
+        report is about.
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+      description: Paste the full error output or traceback, not a paraphrase.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The exact command and input that triggers it.
+      placeholder: |
+        1. grantforge draft proposal.json --profile profile.json
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: "The output of `python -m grantforge version`, or the commit SHA."
+      placeholder: e.g. grantforge v2.0.1, or commit fc1e785
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and runtime
+      description: "GrantForge requires Python 3.13 or newer."
+      placeholder: e.g. Windows 11, Python 3.13.14
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues for the same problem
+          required: true
+        - label: This is not a security vulnerability (those are reported privately per SECURITY.md)
+          required: true

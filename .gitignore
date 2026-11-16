@@ -1,5 +1,34 @@
-
+# Build output
 dist/
+build/
+wheels/
+*.egg
 *.egg-info/
+
+# Byte-compiled files and caches
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Editor and OS droppings
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
