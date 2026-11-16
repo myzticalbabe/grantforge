@@ -19,6 +19,10 @@ dependencies = [
     "pydantic>=2.10",
     "pydantic-settings>=2.6",
     "typer>=0.12",
+    # typer 0.12 calls Parameter.make_metavar() without the ctx argument that
+    # click 8.2 added, so an unpinned click 8.2+ breaks every CLI invocation with
+    # "TypeError: make_metavar() missing 1 required positional argument".
+    "click>=8.0,<8.2",
     "rich>=13.9",
     # Browsing instrument (split out as PROJECT Madi 2026-11-11).
     "madi>=0.1.0",
