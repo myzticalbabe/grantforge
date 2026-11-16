@@ -381,16 +381,28 @@ class ExportEngine(Engine[ExportInput, ExportOutput]):
             [],
             ["Category", "Amount"],
         ]
-        # Blank, not 0: an unfilled row must not read as a $0 allocation.
-        rows.extend([[cat] for cat in categories])
-        rows.append(["Total"])
+        # Blank, not 0: an unfilled row must not read as a $0 allocation. The
+        # amount cell is emitted as an empty <c/> so this fallback is the same
+        # table the openpyxl path builds -- it previously wrote the category
+        # column alone, so the shipped-on-3.15t workbook had no Amount column
+        # for a figure to go in and no total formula at all.
+        first_amount_row = len(rows) + 1
+        last_amount_row = first_amount_row + len(categories) - 1
+        rows.extend([[cat, None] for cat in categories])
+        rows.append(["Total", f"=SUM(B{first_amount_row}:B{last_amount_row})"])
         rows.append([])
         rows.append([self._budget_note(input)])
         rows.append([self._ceiling_note(input)])
 
         def _cell(col: str, row_num: int, value: Any) -> str:
             ref = f"{col}{row_num}"
+            if value is None:
+                # An empty cell, present but blank. Omitting it entirely is
+                # indistinguishable from a narrower sheet.
+                return f'<c r="{ref}"/>'
             if isinstance(value, str):
+                if value.startswith("="):
+                    return f'<c r="{ref}"><f>{escape(value[1:])}</f></c>'
                 return f'<c r="{ref}" t="inlineStr"><is><t>{escape(value)}</t></is></c>'
             return f'<c r="{ref}"><v>{value}</v></c>'
 
