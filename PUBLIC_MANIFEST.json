@@ -1,0 +1,42 @@
+{
+  "name": "grantforge",
+  "version": "1.0.0",
+  "description": "grantforge repository",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/myzticalbabe/grantforge.git"
+  },
+  "homepage": "https://github.com/myzticalbabe/grantforge",
+  "bugs": {
+    "url": "https://github.com/myzticalbabe/grantforge/issues"
+  },
+  "license": "MIT",
+  "author": "grantforge Contributors",
+  "maintainers": [
+    {
+      "name": "myzticalbabe",
+      "email": "maintainers@myzticalbabe.com",
+      "web": "https://github.com/myzticalbabe"
+    }
+  ],
+  "keywords": [
+    "stem",
+    "education",
+    "open-source"
+  ],
+  "categories": [
+    "education",
+    "stem"
+  ],
+  "support": {
+    "documentation": "https://github.com/myzticalbabe/grantforge/wiki",
+    "discussions": "https://github.com/myzticalbabe/grantforge/discussions",
+    "security": "https://github.com/myzticalbabe/grantforge/security/advisories"
+  },
+  "governance": {
+    "code_of_conduct": "CODE_OF_CONDUCT.md",
+    "contributing": "CONTRIBUTING.md",
+    "security_policy": "SECURITY.md",
+    "disclosure_policy": "DISCLOSURE_POLICY.md"
+  }
+}
